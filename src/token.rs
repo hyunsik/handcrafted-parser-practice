@@ -6,13 +6,40 @@ use std::rc::Rc;
 use ast;
 use interner::{self, StrInterner, RcStr};
 
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Copy)]
+pub enum Literal {
+  Byte(ast::Name),
+  Char(ast::Name),
+  Integer(ast::Name),
+  Float(ast::Name),
+  Str_(ast::Name),
+  StrRaw(ast::Name, usize), /* raw str delimited by n hash symbols */
+  ByteStr(ast::Name),
+  ByteStrRaw(ast::Name, usize), /* raw byte str delimited by n hash symbols */
+}
+
 #[derive(Debug)]
 pub enum Token {
+  /* Literals */
+  Literal(Literal, Option<ast::Name>),
+  
   Ident(ast::Ident, IdentStyle),
   Whitespace,
   Underscore,  
   
   Eof,
+}
+
+impl fmt::Display for Token {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    match *self {
+      Token::Literal(_, _) => write!(f, "Literal"),
+      Token::Ident(n, _)   => write!(f, "Ident({})", n),
+      Token::Whitespace    => write!(f, "Whitespace"),
+      Token::Underscore    => write!(f, "Underscore"),
+      Token::Eof           => write!(f, "Eof")
+    }
+  }
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Copy)]

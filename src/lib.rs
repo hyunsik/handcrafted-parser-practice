@@ -10,7 +10,7 @@ mod token;
 use std::ops::{Add, Sub};
 use std::rc::Rc;
 
-use token::{IdentStyle, Token, str_to_ident};
+use token::{IdentStyle, Literal, Token, str_to_ident};
 
 pub struct FatalError;
 
@@ -115,6 +115,15 @@ pub fn char_at(s: &str, byte: usize) -> char {
   s[byte..].chars().next().unwrap()
 }
 
+fn in_range(c: Option<char>, lo: char, hi: char) -> bool {
+  match c {
+    Some(c) => lo <= c && c <= hi,
+    _ => false
+  }
+}
+
+fn is_dec_digit(c: Option<char>) -> bool { return in_range(c, '0', '9'); }
+
 pub fn is_whitespace(c: Option<char>) -> bool {
   match c.unwrap_or('\x00') { // None can be null for now... it's not whitespace
     ' ' | '\n' | '\t' | '\r' => true,
@@ -173,6 +182,10 @@ impl StringReader {
     }    
   }
   
+  pub fn curr_is(&self, c: char) -> bool {
+    self.curr == Some(c)
+  }
+  
   fn byte_offset(&self, pos: BytePos) -> BytePos {
     (pos - BytePos(0))
   }  
@@ -183,6 +196,14 @@ impl StringReader {
   pub fn with_str_from<T, F>(&self, start: BytePos, f: F) -> T 
       where F: FnOnce(&str) -> T {
     self.with_str_from_to(start, self.last_pos, f)
+  }
+  
+  /// Create a Name from a given offset to the current offset, each
+  /// adjusted 1 towards each other (assumes that on either side there is a
+  /// single-byte delimiter).
+  pub fn name_from(&self, start: BytePos) -> ast::Name {
+    debug!("taking an ident from {:?} to {:?}", start, self.last_pos);
+    self.with_str_from(start, token::intern)
   }
   
   /// Calls `f` with a string slice of the source text spanning from `start`
@@ -250,7 +271,73 @@ impl StringReader {
       });
     }
     
+    if is_dec_digit(c) {
+      let num = self.scan_number(c.unwrap());
+      let suffix = self.scan_optional_raw_name();
+      debug!("next_token_inner: scanned number {:?}, {:?}", num, suffix);
+      return Token::Literal(num, suffix)
+    }
+    
     Token::Whitespace
+  }
+  
+  /// Scan over a float exponent.
+  fn scan_float_exponent(&mut self) {
+    if self.curr_is('e') || self.curr_is('E') {
+      self.bump();
+      if self.curr_is('-') || self.curr_is('+') {
+        self.bump();
+      }
+      if self.scan_digits(10, 10) == 0 {
+        panic!("expected at least one digit in exponent: {:?} to {:?}", 
+          self.last_pos, self.pos);
+        // TODO - change it to err_span
+        //self.err_span_(self.last_pos, self.pos, "expected at least one digit in exponent")
+      }
+    }
+  }
+  
+  /// Check that a base is valid for a floating literal, emitting a nice
+  /// error if it isn't.
+  fn check_float_base(&mut self, start_bpos: BytePos, last_bpos: BytePos, base: usize) {
+    // TODO - change it to err_span
+    /*
+    match base {
+      16 => self.err_span_(start_bpos, last_bpos, "hexadecimal float literal is not \
+                           supported"),
+      8 => self.err_span_(start_bpos, last_bpos, "octal float literal is not supported"),
+      2 => self.err_span_(start_bpos, last_bpos, "binary float literal is not supported"),
+      _   => ()
+    }*/
+    
+    match base {
+      16 => panic!("hexadecimal float literal is not supported: {:?} to {:?}", 
+              start_bpos, last_bpos),
+      8 => panic!("octal float literal is not supported: {:?} to {:?}", 
+              start_bpos, last_bpos),
+      2 => panic!("binary float literal is not supported: {:?} to {:?}", 
+              start_bpos, last_bpos),
+      _   => ()                                          
+    }
+  }
+  
+  /// Eats <XID_start><XID_continue>*, if possible.
+  fn scan_optional_raw_name(&mut self) -> Option<ast::Name> {
+    if !ident_start(self.curr) {
+      return None
+    }
+    let start = self.last_pos;
+    while ident_continue(self.curr) {
+      self.bump();
+    }
+
+    self.with_str_from(start, |string| {
+      if string == "_" {
+        None
+      } else {
+        Some(token::intern(string))
+      }
+    })
   }  
   
   /// If there is whitespace, shebang, or a comment, scan it. Otherwise,
@@ -267,6 +354,104 @@ impl StringReader {
         c
       },
       _ => None
+    }
+  }
+  
+  /// Scan through any digits (base `scan_radix`) or underscores,
+  /// and return how many digits there were.
+  ///
+  /// `real_radix` represents the true radix of the number we're
+  /// interested in, and errors will be emitted for any digits
+  /// between `real_radix` and `scan_radix`.
+  fn scan_digits(&mut self, real_radix: u32, scan_radix: u32) -> usize {
+    assert!(real_radix <= scan_radix);
+    let mut len = 0;
+    loop {
+      let c = self.curr;
+      if c == Some('_') { debug!("skipping a _"); self.bump(); continue; }
+      match c.and_then(|cc| cc.to_digit(scan_radix)) {
+        Some(_) => {
+          debug!("{:?} in scan_digits", c);
+          // check that the hypothetical digit is actually
+          // in range for the true radix
+          if c.unwrap().to_digit(real_radix).is_none() {            
+            panic!("{}: {:?} to {:?}", 
+              &format!("invalid digit for a base {} literal", real_radix), 
+              self.last_pos, self.pos);
+            // TODO - to change err_span
+            // self.err_span_(self.last_pos, self.pos,
+            //                &format!("invalid digit for a base {} literal",
+            //                real_radix));
+          }
+          len += 1;
+          self.bump();
+        }
+        _ => return len
+      }
+    };
+  }
+  
+  /// Lex a LIT_INTEGER or a LIT_FLOAT
+  fn scan_number(&mut self, c: char) -> Literal {
+    let num_digits;
+    let mut base = 10;
+    let start_bpos = self.last_pos;
+
+    self.bump();
+
+    if c == '0' {
+      match self.curr.unwrap_or('\0') {
+        'b' => { self.bump(); base = 2; num_digits = self.scan_digits(2, 10); }
+        'o' => { self.bump(); base = 8; num_digits = self.scan_digits(8, 10); }
+        'x' => { self.bump(); base = 16; num_digits = self.scan_digits(16, 16); }
+        '0'...'9' | '_' | '.' => {
+          num_digits = self.scan_digits(10, 10) + 1;
+        }
+        _ => {
+          // just a 0
+          return Literal::Integer(self.name_from(start_bpos));
+        }
+      }
+    } else if c.is_digit(10) {
+      num_digits = self.scan_digits(10, 10) + 1;
+    } else {
+      num_digits = 0;
+    }
+
+    if num_digits == 0 {
+      panic!("no valid digits found for number: {:?} to {:?}", 
+        start_bpos, self.last_pos);
+      // TODO - change it to err_span
+      //self.err_span_(start_bpos, self.last_pos, "no valid digits found for number");
+      return Literal::Integer(token::intern("0"));
+    }
+
+    // might be a float, but don't be greedy if this is actually an
+    // integer literal followed by field/method access or a range pattern
+    // (`0..2` and `12.foo()`)
+    if self.curr_is('.') && !self.nextch_is('.') && !self.nextch().unwrap_or('\0')
+                                                         .is_xid_start() {
+      // might have stuff after the ., and if it does, it needs to start
+      // with a number
+      self.bump();
+      if self.curr.unwrap_or('\0').is_digit(10) {
+        self.scan_digits(10, 10);
+        self.scan_float_exponent();
+      }
+      let last_pos = self.last_pos;
+      self.check_float_base(start_bpos, last_pos, base);
+      return Literal::Float(self.name_from(start_bpos));
+    } else {
+      // it might be a float if it has an exponent
+      if self.curr_is('e') || self.curr_is('E') {
+        self.scan_float_exponent();
+        let last_pos = self.last_pos;
+        self.check_float_base(start_bpos, last_pos, base);
+        return Literal::Float(self.name_from(start_bpos));
+      }
+    
+    // but we certainly have an integer!
+    return Literal::Integer(self.name_from(start_bpos));
     }
   }
   
@@ -307,33 +492,23 @@ mod tests {
   
   #[test]
   fn test_scan() {
-    let mut r = StringReader::new(Rc::new("  fn".to_string()));
+    let mut r = StringReader::new(Rc::new("let x = 10".to_string()));
     
-    r.bump();
     /*
     match r.scan_whitespace_or_comment() {
       Some(Token::Whitespace) => println!("Whitespace"),
       _ => panic!("No whitespace")
     };*/
-    
-    match r.next_token_inner() {
-      Token::Whitespace => println!("Whitespace"),
-      Token::Ident(_, _) => println!("Ident"),
-      _ => panic!("No whitespace")
-    };
-    
+      
     r.bump();
-    match r.next_token_inner() {
-      Token::Whitespace => println!("Whitespace"),
-      Token::Ident(_, _) => println!("Ident"),
-      _ => panic!("No whitespace")
-    };
-    
+    println!("{}", r.next_token_inner());
     r.bump();
-    match r.next_token_inner() {
-      Token::Whitespace => println!("Whitespace"),
-      Token::Ident(n, _) => println!("Ident: {}", n),
-      _ => panic!("No whitespace")
-    };
+    println!("{}", r.next_token_inner());
+    r.bump();
+    println!("{}", r.next_token_inner());
+    r.bump();
+    println!("{}", r.next_token_inner());
+    r.bump();
+    println!("{}", r.next_token_inner());
   }
 }
