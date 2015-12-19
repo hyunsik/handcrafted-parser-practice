@@ -500,16 +500,13 @@ mod tests {
       Some(Token::Whitespace) => println!("Whitespace"),
       _ => panic!("No whitespace")
     };*/
+    
+    loop {
+      if r.is_eof() {
+        break;
+      }
       
-    r.bump();
-    println!("{}", r.next_token_inner());
-    r.bump();
-    println!("{}", r.next_token_inner());
-    r.bump();
-    println!("{}", r.next_token_inner());
-    r.bump();
-    println!("{}", r.next_token_inner());
-    r.bump();
-    println!("{}", r.next_token_inner());
+      println!("{:?}", r.next_token());
+    }
   }
 }
