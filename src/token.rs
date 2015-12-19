@@ -18,8 +18,11 @@ pub enum Literal {
   ByteStrRaw(ast::Name, usize), /* raw byte str delimited by n hash symbols */
 }
 
-#[derive(Debug)]
+#[allow(non_camel_case_types)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Token {
+  EqEq,
+  Eq,
   /* Literals */
   Literal(Literal, Option<ast::Name>),
   
@@ -33,6 +36,8 @@ pub enum Token {
 impl fmt::Display for Token {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     match *self {
+      Token::EqEq          => write!(f, "EqEq"),
+      Token::Eq            => write!(f, "Eq"),
       Token::Literal(_, _) => write!(f, "Literal"),
       Token::Ident(n, _)   => write!(f, "Ident({})", n),
       Token::Whitespace    => write!(f, "Whitespace"),

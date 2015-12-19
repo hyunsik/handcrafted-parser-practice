@@ -4,96 +4,46 @@
 extern crate log;
 
 mod ast;
+mod codemap;
 mod interner;
 mod token;
 
+use std::mem::replace;
 use std::ops::{Add, Sub};
 use std::rc::Rc;
 
+use codemap::{BytePos, CharPos, Pos, Span};
 use token::{IdentStyle, Literal, Token, str_to_ident};
 
 pub struct FatalError;
 
 pub trait Reader {
     fn is_eof(&self) -> bool;
-    fn next_token(&mut self) -> Token;
+    fn next_token(&mut self) -> TokenAndSpan;
     /// Report a fatal error with the current span.
     fn fatal(&self, &str) -> FatalError;
     /// Report a non-fatal error with the current span.
     fn err(&self, &str);
     fn peek(&self) -> Token;
     /// Get a token the parser cares about.
-    fn real_token(&mut self) -> Token {
-        let mut t = self.next_token();
-        loop {
-            match t {
-                Token::Whitespace => {
-                    t = self.next_token();
-                },
-                _ => break
-            }
-        }
-        t
+    fn real_token(&mut self) -> TokenAndSpan {
+      let mut t = self.next_token();
+      loop {
+        match t.tok {
+          Token::Whitespace => {
+            t = self.next_token();
+          },
+          _ => break
+        }  
+      }
+      t
     }
 }
 
-
-pub trait Pos {
-    fn from_usize(n: usize) -> Self;
-    fn to_usize(&self) -> usize;
-}
-
-/// A byte offset. Keep this small (currently 32-bits), as AST contains
-/// a lot of them.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Debug)]
-pub struct BytePos(pub u32);
-
-/// A character offset. Because of multibyte utf8 characters, a byte offset
-/// is not equivalent to a character offset. The CodeMap will convert BytePos
-/// values to CharPos values as necessary.
-#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Debug)]
-pub struct CharPos(pub usize);
-
-impl Pos for BytePos {
-    fn from_usize(n: usize) -> BytePos { BytePos(n as u32) }
-    fn to_usize(&self) -> usize { let BytePos(n) = *self; n as usize }
-}
-
-impl Add for BytePos {
-    type Output = BytePos;
-
-    fn add(self, rhs: BytePos) -> BytePos {
-        BytePos((self.to_usize() + rhs.to_usize()) as u32)
-    }
-}
-
-impl Sub for BytePos {
-    type Output = BytePos;
-
-    fn sub(self, rhs: BytePos) -> BytePos {
-        BytePos((self.to_usize() - rhs.to_usize()) as u32)
-    }
-}
-
-impl Pos for CharPos {
-    fn from_usize(n: usize) -> CharPos { CharPos(n) }
-    fn to_usize(&self) -> usize { let CharPos(n) = *self; n }
-}
-
-impl Add for CharPos {
-    type Output = CharPos;
-
-    fn add(self, rhs: CharPos) -> CharPos {
-        CharPos(self.to_usize() + rhs.to_usize())
-    }
-}
-
-impl Sub for CharPos {
-    type Output = CharPos;
-
-    fn sub(self, rhs: CharPos) -> CharPos {
-        CharPos(self.to_usize() - rhs.to_usize())
-    }
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct TokenAndSpan {
+  pub tok: Token,
+  pub sp: Span,
 }
 
 pub struct StringReader {  
@@ -108,6 +58,7 @@ pub struct StringReader {
   
   /* cached: */
   pub peek_tok: Token,
+  pub peek_span: Span,
   pub source_text: Rc<String>
 }
 
@@ -153,8 +104,13 @@ fn ident_continue(c: Option<char>) -> bool {
 impl<'a> Reader for StringReader {
   fn is_eof(&self) -> bool { self.curr.is_none() }
   
-  fn next_token(&mut self) -> Token {
-    Token::Whitespace
+  fn next_token(&mut self) -> TokenAndSpan {
+    let ret_val = TokenAndSpan {
+      tok: replace(&mut self.peek_tok, Token::Underscore),
+      sp: self.peek_span,
+    };
+    self.advance_token();
+    ret_val
   }
   
   fn fatal(&self, err: &str) -> FatalError {
@@ -178,12 +134,35 @@ impl StringReader {
       col: CharPos(0),
       curr: Some('\n'),
       peek_tok: Token::Eof,
+      peek_span: codemap::DUMMY_SP,
       source_text: source_text 
     }    
   }
   
   pub fn curr_is(&self, c: char) -> bool {
     self.curr == Some(c)
+  }
+  
+  /// Advance peek_tok and peek_span to refer to the next token, and
+  /// possibly update the interner.
+  fn advance_token(&mut self) {
+    match self.scan_whitespace_or_comment() {
+      Some(comment) => {
+        self.peek_span = comment.sp;
+        self.peek_tok = comment.tok;
+      },
+      None => {
+        if self.is_eof() {
+          self.peek_tok = Token::Eof;
+          self.peek_span = codemap::mk_sp(self.last_pos, self.last_pos);
+        } else {
+          let start_bytepos = self.last_pos;
+          self.peek_tok = self.next_token_inner();
+          self.peek_span = codemap::mk_sp(start_bytepos,
+                                          self.last_pos);
+        };
+      }
+    }
   }
   
   fn byte_offset(&self, pos: BytePos) -> BytePos {
@@ -278,7 +257,26 @@ impl StringReader {
       return Token::Literal(num, suffix)
     }
     
-    Token::Whitespace
+    match c.expect("next_token_inner called at EOF") {
+      // Multi-byte tokens.
+      '=' => {
+        self.bump();
+        if self.curr_is('=') {
+          self.bump();
+          return Token::EqEq;
+        } else {
+          return Token::Eq;
+        }
+      },      
+      c => { // unknown start of token
+        let last_bpos = self.last_pos;
+        let bpos = self.pos;
+        // unicode_chars::check_for_substitution(&self, c);
+        panic!("unknown start of token: {:?} to {:?}", last_bpos, bpos);
+        // TODO - change it to err_span
+        //panic!(self.fatal_span_char(last_bpos, bpos, "unknown start of token", c))
+      }
+    }
   }
   
   /// Scan over a float exponent.
@@ -342,14 +340,17 @@ impl StringReader {
   
   /// If there is whitespace, shebang, or a comment, scan it. Otherwise,
   /// return None.
-  pub fn scan_whitespace_or_comment(&mut self) -> Option<Token> {
+  pub fn scan_whitespace_or_comment(&mut self) -> Option<TokenAndSpan> {
     match self.curr.unwrap_or('\0') {
       // # to handle shebang at start of file -- this is the entry point
       // for skipping over all "junk"      
       c if is_whitespace(Some(c)) => {
         let start_bpos = self.last_pos;
         while is_whitespace(self.curr) { self.bump(); }
-        let c = Some(Token::Whitespace);
+        let c = Some(TokenAndSpan {
+          tok: Token::Whitespace,
+          sp: codemap::mk_sp(start_bpos, self.last_pos)
+        });
         debug!("scanning whitespace: {:?}", c);
         c
       },
