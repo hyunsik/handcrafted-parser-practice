@@ -106,7 +106,7 @@ fn ident_continue(c: Option<char>) -> bool {
 impl<'a> Reader for StringReader {
   fn is_eof(&self) -> bool { self.curr.is_none() }
   
-  fn next_token(&mut self) -> TokenAndSpan {
+  fn next_token(&mut self) -> TokenAndSpan {    
     let ret_val = TokenAndSpan {
       tok: replace(&mut self.peek_tok, Token::Underscore),
       sp: self.peek_span,
@@ -128,8 +128,8 @@ impl<'a> Reader for StringReader {
 }
 
 impl StringReader {
-  pub fn new(source_text: Rc<String>) -> StringReader {
-    
+  
+  fn new_raw(source_text: Rc<String>) -> StringReader {    
     let mut sr = StringReader {
       pos: BytePos(0),
       last_pos: BytePos(0),
@@ -141,6 +141,12 @@ impl StringReader {
     };    
     sr.bump();
     sr    
+  }
+  
+  pub fn new(source_text: Rc<String>) -> StringReader {    
+    let mut sr = StringReader::new_raw(source_text);
+    sr.advance_token();
+    sr
   }
   
   pub fn curr_is(&self, c: char) -> bool {
@@ -532,8 +538,7 @@ impl StringReader {
   /// discovered, add it to the FileMap's list of line start offsets.
   pub fn bump(&mut self) {
     self.last_pos = self.pos;
-    let current_byte_offset = self.byte_offset(self.pos).to_usize();
-  
+    let current_byte_offset = self.byte_offset(self.pos).to_usize();  
     if current_byte_offset < self.source_text.len() {
       assert!(self.curr.is_some());
       let last_char = self.curr.unwrap();
