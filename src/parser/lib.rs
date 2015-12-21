@@ -10,7 +10,7 @@ extern crate log;
 mod ast;
 mod codemap;
 mod interner;
-mod token;
+pub mod token;
 
 use std::mem::replace;
 use std::ops::{Add, Sub};

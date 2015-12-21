@@ -22,9 +22,18 @@ extern "C" {
   pub fn add_history(line: *const c_char);
 }
 
-use std::ffi::{CString};
+use std::ffi::{CStr, CString};
 
 #[inline]
 pub fn from_str(s: &str) -> *const c_char {
   CString::new(s.as_bytes()).unwrap().as_ptr()
+}
+
+#[inline]
+pub fn to_str<'a>(chars: *const c_char) -> &'a str {
+  unsafe {
+    let c_str: &CStr = CStr::from_ptr(chars);
+    let bytes = c_str.to_bytes();
+    ::std::str::from_utf8_unchecked(bytes)
+  }
 }
