@@ -6,6 +6,21 @@ use std::rc::Rc;
 use ast;
 use interner::{self, StrInterner, RcStr};
 
+#[allow(non_camel_case_types)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Copy)]
+pub enum BinOpToken {
+  Plus,
+  Minus,
+  Star,
+  Slash,
+  Percent,
+  Caret,
+  And,
+  Or,
+  Shl,
+  Shr,
+}
+
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Copy)]
 pub enum Literal {
   Byte(ast::Name),
@@ -21,30 +36,138 @@ pub enum Literal {
 #[allow(non_camel_case_types)]
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Token {
-  EqEq,
+  /* Expression-operator symbols. */
+  /// =
   Eq,
+  /// ==
+  EqEq,
+  /// <
+  Lt,
+  /// <=
+  Le,  
+  /// !
+  Not,
+  /// !=
+  Ne,
+  /// >  
+  Gt,
+  /// >=
+  Ge,
+  /// &
+  And, 
+  /// &&
+  AndAnd,
+  /// |
+  Or,
+  /// || 
+  OrOr, 
+  /// ~ 
+  Tilde,
+  BinOp(BinOpToken),
+  BinOpEq(BinOpToken),
+  
+  /* Structural symbols */
+  /// @
+  At,    
+  /// .     
+  Dot,  
+  /// ..      
+  DotDot,
+  /// ...     
+  DotDotDot,
+  /// ,    
+  Comma,
+  /// ;      
+  Semi, 
+  /// :      
+  Colon,   
+  /// ::   
+  ColonColon, 
+  /// ->
+  RArrow,
+  /// <-     
+  LArrow,
+  /// => 
+  FatArrow,   
+  /// #
+  Pound,
+  /// $      
+  Dollar,
+  /// ?
+  Question,
+  /// _
+  Underscore,
+  /// An opening delimiter, eg. `{`
+  OpenDelim(DelimToken),
+  /// A closing delimiter, eg. `}`
+  CloseDelim(DelimToken),
+      
   /* Literals */
   Literal(Literal, Option<ast::Name>),
   
-  Ident(ast::Ident, IdentStyle),
-  Whitespace,
-  Underscore,  
+  /* Name components */
+  Ident(ast::Ident, IdentStyle),  
   
+  Whitespace,
   Eof,
 }
 
 impl fmt::Display for Token {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     match *self {
-      Token::EqEq          => write!(f, "EqEq"),
+      /* Expression-operator symbols. */
       Token::Eq            => write!(f, "Eq"),
+      Token::EqEq          => write!(f, "EqEq"),
+      Token::Lt            => write!(f, "Lt"),
+      Token::Le            => write!(f, "Le"),      
+      Token::Not           => write!(f, "Not"),
+      Token::Ne            => write!(f, "Ne"),
+      Token::Gt            => write!(f, "Gt"),
+      Token::Ge            => write!(f, "Ge"),
+      Token::And           => write!(f, "And"),
+      Token::AndAnd        => write!(f, "AndAnd"),
+      Token::Or            => write!(f, "Or"),
+      Token::OrOr          => write!(f, "OrOr"),      
+      Token::Tilde         => write!(f, "Tilde"),
+      Token::BinOp(tok)    => write!(f, "{:?}", tok),
+      Token::BinOpEq(tok)  => write!(f, "{:?}", tok),
+      
+      /* Structural symbols */
+      Token::At            => write!(f, "At"),
+      Token::Dot           => write!(f, "Dot"),
+      Token::DotDot        => write!(f, "DotDot"),
+      Token::DotDotDot     => write!(f, "DotDotDot"),      
+      Token::Comma         => write!(f, "Comma"),
+      Token::Semi          => write!(f, "Semi"),
+      Token::Colon         => write!(f, "Colon"),
+      Token::ColonColon    => write!(f, "ColonColon"),
+      Token::RArrow        => write!(f, "RArrow"),
+      Token::LArrow        => write!(f, "LArrow"),
+      Token::FatArrow      => write!(f, "FatArrow"),
+      Token::Pound         => write!(f, "Pound"),
+      Token::Dollar        => write!(f, "Dollar"),
+      Token::Question      => write!(f, "Question"),
+      Token::Underscore    => write!(f, "Underscore"),  
+      Token::OpenDelim(t)  => write!(f, "{:?}", t),
+      Token::CloseDelim(t) => write!(f, "{:?}", t),
+            
       Token::Literal(_, _) => write!(f, "Literal"),
       Token::Ident(n, _)   => write!(f, "Ident({})", n),
       Token::Whitespace    => write!(f, "Whitespace"),
-      Token::Underscore    => write!(f, "Underscore"),
       Token::Eof           => write!(f, "Eof")
     }
   }
+}
+
+/// A delimiter token
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Copy)]
+pub enum DelimToken {
+  /// A round parenthesis: `(` or `)`
+  Paren,
+  /// A square bracket: `[` or `]`
+  Bracket,
+  /// A curly brace: `{` or `}`
+  Brace,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Copy)]

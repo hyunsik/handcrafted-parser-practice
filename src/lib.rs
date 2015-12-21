@@ -1,5 +1,7 @@
 #![feature(unicode)]
+#![feature(convert)]
 
+extern crate env_logger;
 #[macro_use]
 extern crate log;
 
@@ -13,7 +15,7 @@ use std::ops::{Add, Sub};
 use std::rc::Rc;
 
 use codemap::{BytePos, CharPos, Pos, Span};
-use token::{IdentStyle, Literal, Token, str_to_ident};
+use token::{BinOpToken, IdentStyle, Literal, Token, str_to_ident};
 
 pub struct FatalError;
 
@@ -128,7 +130,7 @@ impl<'a> Reader for StringReader {
 impl StringReader {
   pub fn new(source_text: Rc<String>) -> StringReader {
     
-    StringReader {
+    let mut sr = StringReader {
       pos: BytePos(0),
       last_pos: BytePos(0),
       col: CharPos(0),
@@ -136,7 +138,9 @@ impl StringReader {
       peek_tok: Token::Eof,
       peek_span: codemap::DUMMY_SP,
       source_text: source_text 
-    }    
+    };    
+    sr.bump();
+    sr    
   }
   
   pub fn curr_is(&self, c: char) -> bool {
@@ -219,6 +223,16 @@ impl StringReader {
     }
   }
   
+  fn binop(&mut self, op: BinOpToken) -> Token {
+    self.bump();
+    if self.curr_is('=') {
+      self.bump();
+      return Token::BinOpEq(op);
+    } else {
+      return Token::BinOp(op);
+    }
+  }
+  
   /// Return the next token from the string, advances the input past that
   /// token, and updates the interner
   fn next_token_inner(&mut self) -> Token {
@@ -258,7 +272,7 @@ impl StringReader {
     }
     
     match c.expect("next_token_inner called at EOF") {
-      // Multi-byte tokens.
+      // =, ==
       '=' => {
         self.bump();
         if self.curr_is('=') {
@@ -267,7 +281,65 @@ impl StringReader {
         } else {
           return Token::Eq;
         }
-      },      
+      }
+      
+      // <, <=, <-
+      '<' => {
+        self.bump();
+        match self.curr.unwrap_or('\x00') {
+          '=' => { self.bump(); return Token::Le; }
+          '-' => {
+            self.bump();
+            match self.curr.unwrap_or('\x00') {
+              _ => { return Token::LArrow; }
+              }
+          }
+          _ => { return Token::Lt; }
+        }
+      }  
+      
+      // !, !=
+      '!' => {
+        self.bump();
+        if self.curr_is('=') {
+          self.bump();
+          return Token::Ne;
+        } else { return Token::Not; }
+      }
+      
+      // >, >=
+      '>' => {
+        self.bump();
+        match self.curr.unwrap_or('\x00') {
+          '=' => { self.bump(); return Token::Ge; }
+          '>' => { return self.binop(BinOpToken::Shr); }
+          _ => { return Token::Gt; }
+        }
+      }
+      
+      ';' => { self.bump(); return Token::Semi; },
+      ',' => { self.bump(); return Token::Comma; },
+      '.' => { 
+        self.bump();        
+        return if self.curr_is('.') {
+          self.bump();
+          if self.curr_is('.') {
+            self.bump();
+            Token::DotDotDot
+          } else {
+            Token::DotDot
+          }
+        } else {
+          Token::Dot
+        };
+      },
+      
+      '@' => { self.bump(); return Token::At; }
+      '#' => { self.bump(); return Token::Pound; }
+      '~' => { self.bump(); return Token::Tilde; }
+      '?' => { self.bump(); return Token::Question; }
+      
+          
       c => { // unknown start of token
         let last_bpos = self.last_pos;
         let bpos = self.pos;
@@ -451,17 +523,14 @@ impl StringReader {
         return Literal::Float(self.name_from(start_bpos));
       }
     
-    // but we certainly have an integer!
-    return Literal::Integer(self.name_from(start_bpos));
+      // but we certainly have an integer!
+      return Literal::Integer(self.name_from(start_bpos));
     }
   }
   
   /// Advance the StringReader by one character. If a newline is
   /// discovered, add it to the FileMap's list of line start offsets.
   pub fn bump(&mut self) {
-    println!("char({}), pos: {:?}, col: {:?}, last_pos: {:?}", 
-      self.curr.as_ref().unwrap(), self.pos, self.col, self.last_pos);
-    
     self.last_pos = self.pos;
     let current_byte_offset = self.byte_offset(self.pos).to_usize();
   
@@ -482,6 +551,8 @@ impl StringReader {
     } else {
       self.curr = None;
     }
+    
+    debug!("ch {}", self.curr.as_ref().unwrap());
   }
 }
 
@@ -489,11 +560,29 @@ impl StringReader {
 mod tests {
   use std::rc::Rc;
   use token::Token;
-  use super::*;  
+  use super::*;
+  use env_logger;  
+  
+  fn assert_tok_stream(expected: &[Token], reader: &mut Reader) {
+    let mut tokens: Vec<Token> = Vec::new();    
+    
+    loop {
+      let tok = reader.next_token().tok;
+      tokens.push(tok.clone());
+       
+      if reader.is_eof() {
+        break;
+      }
+    }
+    
+    assert_eq!(expected, tokens.as_slice());
+  }
   
   #[test]
   fn test_scan() {
-    let mut r = StringReader::new(Rc::new("let x = 10".to_string()));
+    env_logger::init().unwrap();
+    
+    let mut r = StringReader::new(Rc::new("let x = 10;".to_string()));
     
     /*
     match r.scan_whitespace_or_comment() {
@@ -501,12 +590,7 @@ mod tests {
       _ => panic!("No whitespace")
     };*/
     
-    loop {
-      if r.is_eof() {
-        break;
-      }
-      
-      println!("{:?}", r.next_token());
-    }
+    assert_tok_stream(&vec![Token::Eof], 
+    &mut r);
   }
 }
