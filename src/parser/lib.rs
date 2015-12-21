@@ -12,8 +12,6 @@ mod codemap;
 mod interner;
 mod token;
 
-mod readline;
-
 use std::mem::replace;
 use std::ops::{Add, Sub};
 use std::rc::Rc;

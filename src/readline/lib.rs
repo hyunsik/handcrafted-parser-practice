@@ -1,3 +1,5 @@
+#![feature(libc)] extern crate libc;
+
 use libc::c_char;
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]

@@ -1,6 +1,7 @@
 #![feature(libc)]
 extern crate libc;
-mod readline;
+extern crate readline;
+
 use readline::*;
 
 pub fn main() {
