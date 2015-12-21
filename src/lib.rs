@@ -1,6 +1,8 @@
 #![feature(unicode)]
 #![feature(convert)]
+#![feature(libc)]
 
+extern crate libc;
 extern crate env_logger;
 #[macro_use]
 extern crate log;
@@ -9,6 +11,8 @@ mod ast;
 mod codemap;
 mod interner;
 mod token;
+
+mod readline;
 
 use std::mem::replace;
 use std::ops::{Add, Sub};
