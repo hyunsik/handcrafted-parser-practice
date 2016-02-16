@@ -6,7 +6,7 @@ extern crate readline;
 use std::rc::Rc;
 
 use readline::*;
-use parser::*;
+use parser::lexer::{Reader, StringReader};
 use parser::token::Token;
 
 pub fn main() {
@@ -16,18 +16,18 @@ pub fn main() {
       if line.is_null() {
         break;
       }
-      
+
       let mut sr = StringReader::new(Rc::new(to_str(line).to_string()));
       loop {
         let toksp = sr.next_token();
         print!("{} ", toksp.tok);
-        
+
         if toksp.tok == Token::Eof {
           println!("");
           break;
         }
       }
-            
+
       add_history(line);
     }
   }
