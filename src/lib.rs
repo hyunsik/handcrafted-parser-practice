@@ -13,6 +13,10 @@ mod codemap;
 pub mod errors;
 pub mod parser;
 
+pub mod print {
+  pub mod pprust;
+}
+
 pub mod util {
   pub mod interner;
 }

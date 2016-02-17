@@ -1,4 +1,5 @@
 pub use self::BinOpToken::*;
+pub use self::DelimToken::*;
 pub use self::Lit::*;
 pub use self::Token::*;
 pub use self::IdentStyle::*;
@@ -23,6 +24,24 @@ pub enum BinOpToken {
   Or,
   Shl,
   Shr,
+}
+
+/// A delimiter token
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Copy)]
+pub enum DelimToken {
+    /// A round parenthesis: `(` or `)`
+    Paren,
+    /// A square bracket: `[` or `]`
+    Bracket,
+    /// A curly brace: `{` or `}`
+    Brace,
+}
+
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Copy)]
+pub enum IdentStyle {
+  /// `::` follows the identifier with no whitespace in-between.
+  ModName,
+  Plain,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Copy)]
@@ -140,24 +159,6 @@ impl fmt::Display for Token {
       Token::Eof           => write!(f, "Eof")
     }
   }
-}
-
-/// A delimiter token
-#[derive(Clone, PartialEq, Eq, Hash, Debug, Copy)]
-pub enum DelimToken {
-  /// A round parenthesis: `(` or `)`
-  Paren,
-  /// A square bracket: `[` or `]`
-  Bracket,
-  /// A curly brace: `{` or `}`
-  Brace,
-}
-
-#[derive(Clone, PartialEq, Eq, Hash, Debug, Copy)]
-pub enum IdentStyle {
-  /// `::` follows the identifier with no whitespace in-between.
-  ModName,
-  Plain,
 }
 
 // Get the first "argument"

@@ -93,7 +93,17 @@ impl<'a> Parser<'a> {
             expected_tokens: Vec::new(),
         }
     }
-/*
+    /*
+    /// Convert a token to a string using self's reader
+    pub fn token_to_string(token: &token::Token) -> String {
+        pprust::token_to_string(token)
+    }
+
+    /// Convert the current token to a string using self's reader
+    pub fn this_token_to_string(&self) -> String {
+        Parser::token_to_string(&self.token)
+    }
+
     /// parse a single token tree from the input.
     pub fn parse_token_tree(&mut self) -> Result<TokenTree, String> {
 
@@ -133,8 +143,7 @@ impl<'a> Parser<'a> {
             tts.push(try!(self.parse_token_tree()));
         }
         Ok(tts)
-    }
-    */
+    }*/
 }
 
 
