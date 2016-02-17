@@ -2,6 +2,7 @@
 #![feature(convert)]
 #![feature(libc)]
 
+#[macro_use] extern crate bitflags;
 extern crate libc;
 extern crate env_logger;
 #[macro_use]

@@ -1,4 +1,5 @@
-mod parser;
+pub mod obsolete;
+pub mod parser;
 pub mod token;
 pub mod lexer;
 
@@ -39,28 +40,17 @@ impl ParseSess {
 }
 
 /*
-// Create a new parser from a source string
-pub fn new_parser_from_source_str<'a>(sess: &'a ParseSess,
-                                      name: String,
-                                      source: String)
-                                      -> Parser<'a> {
-    filemap_to_parser(sess, sess.codemap().new_filemap(name, source))
-}
-
-/// Given a filemap and config, return a parser
-pub fn filemap_to_parser<'a>(sess: &'a ParseSess,
-                             filemap: Rc<FileMap>) -> Parser<'a> {
-    let end_pos = filemap.end_pos;
-    let mut parser = tts_to_parser(sess, filemap_to_tts(sess, filemap), cfg);
-
-    if parser.token == token::Eof && parser.span == codemap::DUMMY_SP {
-        parser.span = codemap::mk_sp(end_pos, end_pos);
-    }
-
-    parser
+/// Given a filemap, produce a sequence of token-trees
+pub fn filemap_to_tts(sess: &ParseSess, filemap: Rc<FileMap>)
+    -> Vec<ast::TokenTree> {
+    // it appears to me that the cfg doesn't matter here... indeed,
+    // parsing tt's probably shouldn't require a parser at all.
+    let cfg = Vec::new();
+    let srdr = lexer::StringReader::new(&sess.span_diagnostic, filemap);
+    let mut p1 = Parser::new(sess, cfg, Box::new(srdr));
+    panictry!(p1.parse_all_token_trees())
 }
 */
-
 #[cfg(test)]
 mod tests {
   use super::*;
