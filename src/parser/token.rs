@@ -1,3 +1,8 @@
+pub use self::BinOpToken::*;
+pub use self::Lit::*;
+pub use self::Token::*;
+pub use self::IdentStyle::*;
+
 use std::fmt;
 use std::ops::Deref;
 use std::rc::Rc;
@@ -21,7 +26,7 @@ pub enum BinOpToken {
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Copy)]
-pub enum Literal {
+pub enum Lit {
   Byte(ast::Name),
   Char(ast::Name),
   Integer(ast::Name),
@@ -35,80 +40,59 @@ pub enum Literal {
 #[allow(non_camel_case_types)]
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Token {
-  /* Expression-operator symbols. */
-  /// =
-  Eq,
-  /// ==
-  EqEq,
-  /// <
-  Lt,
-  /// <=
-  Le,
-  /// !
-  Not,
-  /// !=
-  Ne,
-  /// >
-  Gt,
-  /// >=
-  Ge,
-  /// &
-  And,
-  /// &&
-  AndAnd,
-  /// |
-  Or,
-  /// ||
-  OrOr,
-  /// ~
-  Tilde,
-  BinOp(BinOpToken),
-  BinOpEq(BinOpToken),
+    /* Expression-operator symbols. */
+    Eq,
+    Lt,
+    Le,
+    EqEq,
+    Ne,
+    Ge,
+    Gt,
+    AndAnd,
+    OrOr,
+    Not,
+    Tilde,
+    BinOp(BinOpToken),
+    BinOpEq(BinOpToken),
 
-  /* Structural symbols */
-  /// @
-  At,
-  /// .
-  Dot,
-  /// ..
-  DotDot,
-  /// ...
-  DotDotDot,
-  /// ,
-  Comma,
-  /// ;
-  Semi,
-  /// :
-  Colon,
-  /// ::
-  ColonColon,
-  /// ->
-  RArrow,
-  /// <-
-  LArrow,
-  /// =>
-  FatArrow,
-  /// #
-  Pound,
-  /// $
-  Dollar,
-  /// ?
-  Question,
-  /// _
-  Underscore,
-  /// An opening delimiter, eg. `{`
-  OpenDelim(DelimToken),
-  /// A closing delimiter, eg. `}`
-  CloseDelim(DelimToken),
+    /* Structural symbols */
+    At,
+    Dot,
+    DotDot,
+    DotDotDot,
+    Comma,
+    Semi,
+    Colon,
+    ColonColon,
+    RArrow,
+    LArrow,
+    FatArrow,
+    Pound,
+    Dollar,
+    Question,
+    /// An opening delimiter, eg. `{`
+    OpenDelim(DelimToken),
+    /// A closing delimiter, eg. `}`
+    CloseDelim(DelimToken),
 
-  /* Literals */
-  Literal(Literal, Option<ast::Name>),
+    /* Literals */
+    Literal(Lit, Option<ast::Name>),
 
-  /* Name components */
-  Ident(ast::Ident, IdentStyle),
+    /* Name components */
+    Ident(ast::Ident, IdentStyle),
+    Underscore,
 
-  Whitespace,
-  Eof,
+    // Junk. These carry no data because we don't really care about the data
+    // they *would* carry, and don't really want to allocate a new ident for
+    // them. Instead, users could extract that from the associated span.
+
+    /// Whitespace
+    Whitespace,
+    /// Comment
+    Comment,
+    Shebang(ast::Name),
+
+    Eof,
 }
 
 impl fmt::Display for Token {
@@ -123,9 +107,7 @@ impl fmt::Display for Token {
       Token::Ne            => write!(f, "Ne"),
       Token::Gt            => write!(f, "Gt"),
       Token::Ge            => write!(f, "Ge"),
-      Token::And           => write!(f, "And"),
       Token::AndAnd        => write!(f, "AndAnd"),
-      Token::Or            => write!(f, "Or"),
       Token::OrOr          => write!(f, "OrOr"),
       Token::Tilde         => write!(f, "Tilde"),
       Token::BinOp(tok)    => write!(f, "{:?}", tok),
@@ -153,6 +135,8 @@ impl fmt::Display for Token {
       Token::Literal(_, _) => write!(f, "Literal"),
       Token::Ident(n, _)   => write!(f, "Ident({})", n),
       Token::Whitespace    => write!(f, "Whitespace"),
+      Token::Comment       => write!(f, "Comment"),
+      Token::Shebang(_)    => write!(f, "Shebang"),
       Token::Eof           => write!(f, "Eof")
     }
   }

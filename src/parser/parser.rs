@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::rc::Rc;
 
+use ast::TokenTree;
 use parser::obsolete::ObsoleteSyntax;
 use parser::ParseSess;
 use parser::token::{self, keywords};
@@ -92,8 +93,38 @@ impl<'a> Parser<'a> {
             expected_tokens: Vec::new(),
         }
     }
+/*
+    /// parse a single token tree from the input.
+    pub fn parse_token_tree(&mut self) -> Result<TokenTree, String> {
 
-    /*
+      fn parse_non_delim_tt_tok<'b>(p: &mut Parser<'b>) -> Result<TokenTree, String> {
+        match p.token {
+          token::CloseDelim(_) => {
+                    let token_str = p.this_token_to_string();
+                    let mut err = p.fatal(
+                        &format!("incorrect close delimiter: `{}`", token_str));
+                    // This is a conservative error: only report the last unclosed delimiter. The
+                    // previous unclosed delimiters could actually be closed! The parser just hasn't
+                    // gotten to them yet.
+                    if let Some(&sp) = p.open_braces.last() {
+                        err.span_note(sp, "unclosed delimiter");
+                    };
+                    Err(err)
+                },
+                /* we ought to allow different depths of unquotation */
+                token::Dollar if p.quote_depth > 0 => {
+                    p.parse_unquoted()
+                }
+                _ => {
+                    Ok(TokenTree::Token(p.span, p.bump_and_get()))
+                }
+        }
+      }
+
+      Err("".to_string())
+    }
+
+
     // parse a stream of tokens into a list of TokenTree's,
     // up to EOF.
     pub fn parse_all_token_trees(&mut self) -> Result<Vec<TokenTree>, String> {
@@ -102,8 +133,10 @@ impl<'a> Parser<'a> {
             tts.push(try!(self.parse_token_tree()));
         }
         Ok(tts)
-    }*/
+    }
+    */
 }
+
 
 #[derive(PartialEq, Eq, Clone)]
 pub enum TokenType {

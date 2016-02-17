@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use ast;
 use codemap::{self, BytePos, CharPos, Pos, Span};
-use parser::token::{self, BinOpToken, IdentStyle, Literal, Token, str_to_ident};
+use parser::token::{self, str_to_ident};
 
 pub struct FatalError;
 
@@ -15,13 +15,13 @@ pub trait Reader {
     fn fatal(&self, &str) -> FatalError;
     /// Report a non-fatal error with the current span.
     fn err(&self, &str);
-    fn peek(&self) -> Token;
+    fn peek(&self) -> token::Token;
     /// Get a token the parser cares about.
     fn real_token(&mut self) -> TokenAndSpan {
       let mut t = self.next_token();
       loop {
         match t.tok {
-          Token::Whitespace => {
+          token::Whitespace => {
             t = self.next_token();
           },
           _ => break
@@ -33,7 +33,7 @@ pub trait Reader {
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct TokenAndSpan {
-  pub tok: Token,
+  pub tok: token::Token,
   pub sp: Span,
 }
 
@@ -48,7 +48,7 @@ pub struct StringReader {
   pub curr: Option<char>,
 
   /* cached: */
-  pub peek_tok: Token,
+  pub peek_tok: token::Token,
   pub peek_span: Span,
   pub source_text: Rc<String>
 }
@@ -97,7 +97,7 @@ impl<'a> Reader for StringReader {
 
   fn next_token(&mut self) -> TokenAndSpan {
     let ret_val = TokenAndSpan {
-      tok: replace(&mut self.peek_tok, Token::Underscore),
+      tok: replace(&mut self.peek_tok, token::Underscore),
       sp: self.peek_span,
     };
     self.advance_token();
@@ -111,8 +111,8 @@ impl<'a> Reader for StringReader {
   fn err(&self, err: &str) {
   }
 
-  fn peek(&self) -> Token {
-    Token::Whitespace
+  fn peek(&self) -> token::Token {
+    token::Whitespace
   }
 }
 
@@ -124,7 +124,7 @@ impl StringReader {
       last_pos: BytePos(0),
       col: CharPos(0),
       curr: Some('\n'),
-      peek_tok: Token::Eof,
+      peek_tok: token::Eof,
       peek_span: codemap::DUMMY_SP,
       source_text: source_text
     };
@@ -152,7 +152,7 @@ impl StringReader {
       },
       None => {
         if self.is_eof() {
-          self.peek_tok = Token::Eof;
+          self.peek_tok = token::Eof;
           self.peek_span = codemap::mk_sp(self.last_pos, self.last_pos);
         } else {
           let start_bytepos = self.last_pos;
@@ -218,19 +218,19 @@ impl StringReader {
     }
   }
 
-  fn binop(&mut self, op: BinOpToken) -> Token {
+  fn binop(&mut self, op: token::BinOpToken) -> token::Token {
     self.bump();
     if self.curr_is('=') {
       self.bump();
-      return Token::BinOpEq(op);
+      return token::BinOpEq(op);
     } else {
-      return Token::BinOp(op);
+      return token::BinOp(op);
     }
   }
 
   /// Return the next token from the string, advances the input past that
   /// token, and updates the interner
-  fn next_token_inner(&mut self) -> Token {
+  fn next_token_inner(&mut self) -> token::Token {
     let c = self.curr;
 
     if ident_start(c) && match (c.unwrap(), self.nextch(), self.nextnextch()) {
@@ -252,9 +252,9 @@ impl StringReader {
 
       return self.with_str_from(start, |string| {
         if string == "_" {
-          Token::Underscore
+          token::Underscore
         } else {
-          Token::Ident(str_to_ident(string), IdentStyle::Plain)
+          token::Ident(str_to_ident(string), token::Plain)
         }
       });
     }
@@ -263,7 +263,7 @@ impl StringReader {
       let num = self.scan_number(c.unwrap());
       let suffix = self.scan_optional_raw_name();
       debug!("next_token_inner: scanned number {:?}, {:?}", num, suffix);
-      return Token::Literal(num, suffix)
+      return token::Literal(num, suffix)
     }
 
     match c.expect("next_token_inner called at EOF") {
@@ -272,9 +272,9 @@ impl StringReader {
         self.bump();
         if self.curr_is('=') {
           self.bump();
-          return Token::EqEq;
+          return token::EqEq;
         } else {
-          return Token::Eq;
+          return token::Eq;
         }
       }
 
@@ -282,14 +282,14 @@ impl StringReader {
       '<' => {
         self.bump();
         match self.curr.unwrap_or('\x00') {
-          '=' => { self.bump(); return Token::Le; }
+          '=' => { self.bump(); return token::Le; }
           '-' => {
             self.bump();
             match self.curr.unwrap_or('\x00') {
-              _ => { return Token::LArrow; }
+              _ => { return token::LArrow; }
               }
           }
-          _ => { return Token::Lt; }
+          _ => { return token::Lt; }
         }
       }
 
@@ -298,41 +298,41 @@ impl StringReader {
         self.bump();
         if self.curr_is('=') {
           self.bump();
-          return Token::Ne;
-        } else { return Token::Not; }
+          return token::Ne;
+        } else { return token::Not; }
       }
 
       // >, >=
       '>' => {
         self.bump();
         match self.curr.unwrap_or('\x00') {
-          '=' => { self.bump(); return Token::Ge; }
-          '>' => { return self.binop(BinOpToken::Shr); }
-          _ => { return Token::Gt; }
+          '=' => { self.bump(); return token::Ge; }
+          '>' => { return self.binop(token::Shr); }
+          _ => { return token::Gt; }
         }
       }
 
-      ';' => { self.bump(); return Token::Semi; },
-      ',' => { self.bump(); return Token::Comma; },
+      ';' => { self.bump(); return token::Semi; },
+      ',' => { self.bump(); return token::Comma; },
       '.' => {
         self.bump();
         return if self.curr_is('.') {
           self.bump();
           if self.curr_is('.') {
             self.bump();
-            Token::DotDotDot
+            token::DotDotDot
           } else {
-            Token::DotDot
+            token::DotDot
           }
         } else {
-          Token::Dot
+          token::Dot
         };
       },
 
-      '@' => { self.bump(); return Token::At; }
-      '#' => { self.bump(); return Token::Pound; }
-      '~' => { self.bump(); return Token::Tilde; }
-      '?' => { self.bump(); return Token::Question; }
+      '@' => { self.bump(); return token::At; }
+      '#' => { self.bump(); return token::Pound; }
+      '~' => { self.bump(); return token::Tilde; }
+      '?' => { self.bump(); return token::Question; }
 
 
       c => { // unknown start of token
@@ -415,7 +415,7 @@ impl StringReader {
         let start_bpos = self.last_pos;
         while is_whitespace(self.curr) { self.bump(); }
         let c = Some(TokenAndSpan {
-          tok: Token::Whitespace,
+          tok: token::Whitespace,
           sp: codemap::mk_sp(start_bpos, self.last_pos)
         });
         debug!("scanning whitespace: {:?}", c);
@@ -460,7 +460,7 @@ impl StringReader {
   }
 
   /// Lex a LIT_INTEGER or a LIT_FLOAT
-  fn scan_number(&mut self, c: char) -> Literal {
+  fn scan_number(&mut self, c: char) -> token::Lit {
     let num_digits;
     let mut base = 10;
     let start_bpos = self.last_pos;
@@ -477,7 +477,7 @@ impl StringReader {
         }
         _ => {
           // just a 0
-          return Literal::Integer(self.name_from(start_bpos));
+          return token::Integer(self.name_from(start_bpos));
         }
       }
     } else if c.is_digit(10) {
@@ -491,7 +491,7 @@ impl StringReader {
         start_bpos, self.last_pos);
       // TODO - change it to err_span
       //self.err_span_(start_bpos, self.last_pos, "no valid digits found for number");
-      return Literal::Integer(token::intern("0"));
+      return token::Integer(token::intern("0"));
     }
 
     // might be a float, but don't be greedy if this is actually an
@@ -508,18 +508,18 @@ impl StringReader {
       }
       let last_pos = self.last_pos;
       self.check_float_base(start_bpos, last_pos, base);
-      return Literal::Float(self.name_from(start_bpos));
+      return token::Float(self.name_from(start_bpos));
     } else {
       // it might be a float if it has an exponent
       if self.curr_is('e') || self.curr_is('E') {
         self.scan_float_exponent();
         let last_pos = self.last_pos;
         self.check_float_base(start_bpos, last_pos, base);
-        return Literal::Float(self.name_from(start_bpos));
+        return token::Float(self.name_from(start_bpos));
       }
 
       // but we certainly have an integer!
-      return Literal::Integer(self.name_from(start_bpos));
+      return token::Integer(self.name_from(start_bpos));
     }
   }
 
