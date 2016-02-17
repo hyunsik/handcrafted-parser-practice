@@ -4,7 +4,7 @@ use std::ops::Deref;
 use std::rc::Rc;
 
 use ast;
-use interner::{self, StrInterner, RcStr};
+use util::interner::{self, StrInterner, RcStr};
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Copy)]
@@ -44,54 +44,54 @@ pub enum Token {
   /// <
   Lt,
   /// <=
-  Le,  
+  Le,
   /// !
   Not,
   /// !=
   Ne,
-  /// >  
+  /// >
   Gt,
   /// >=
   Ge,
   /// &
-  And, 
+  And,
   /// &&
   AndAnd,
   /// |
   Or,
-  /// || 
-  OrOr, 
-  /// ~ 
+  /// ||
+  OrOr,
+  /// ~
   Tilde,
   BinOp(BinOpToken),
   BinOpEq(BinOpToken),
-  
+
   /* Structural symbols */
   /// @
-  At,    
-  /// .     
-  Dot,  
-  /// ..      
+  At,
+  /// .
+  Dot,
+  /// ..
   DotDot,
-  /// ...     
+  /// ...
   DotDotDot,
-  /// ,    
+  /// ,
   Comma,
-  /// ;      
-  Semi, 
-  /// :      
-  Colon,   
-  /// ::   
-  ColonColon, 
+  /// ;
+  Semi,
+  /// :
+  Colon,
+  /// ::
+  ColonColon,
   /// ->
   RArrow,
-  /// <-     
+  /// <-
   LArrow,
-  /// => 
-  FatArrow,   
+  /// =>
+  FatArrow,
   /// #
   Pound,
-  /// $      
+  /// $
   Dollar,
   /// ?
   Question,
@@ -101,13 +101,13 @@ pub enum Token {
   OpenDelim(DelimToken),
   /// A closing delimiter, eg. `}`
   CloseDelim(DelimToken),
-      
+
   /* Literals */
   Literal(Literal, Option<ast::Name>),
-  
+
   /* Name components */
-  Ident(ast::Ident, IdentStyle),  
-  
+  Ident(ast::Ident, IdentStyle),
+
   Whitespace,
   Eof,
 }
@@ -119,7 +119,7 @@ impl fmt::Display for Token {
       Token::Eq            => write!(f, "Eq"),
       Token::EqEq          => write!(f, "EqEq"),
       Token::Lt            => write!(f, "Lt"),
-      Token::Le            => write!(f, "Le"),      
+      Token::Le            => write!(f, "Le"),
       Token::Not           => write!(f, "Not"),
       Token::Ne            => write!(f, "Ne"),
       Token::Gt            => write!(f, "Gt"),
@@ -127,16 +127,16 @@ impl fmt::Display for Token {
       Token::And           => write!(f, "And"),
       Token::AndAnd        => write!(f, "AndAnd"),
       Token::Or            => write!(f, "Or"),
-      Token::OrOr          => write!(f, "OrOr"),      
+      Token::OrOr          => write!(f, "OrOr"),
       Token::Tilde         => write!(f, "Tilde"),
       Token::BinOp(tok)    => write!(f, "{:?}", tok),
       Token::BinOpEq(tok)  => write!(f, "{:?}", tok),
-      
+
       /* Structural symbols */
       Token::At            => write!(f, "At"),
       Token::Dot           => write!(f, "Dot"),
       Token::DotDot        => write!(f, "DotDot"),
-      Token::DotDotDot     => write!(f, "DotDotDot"),      
+      Token::DotDotDot     => write!(f, "DotDotDot"),
       Token::Comma         => write!(f, "Comma"),
       Token::Semi          => write!(f, "Semi"),
       Token::Colon         => write!(f, "Colon"),
@@ -147,10 +147,10 @@ impl fmt::Display for Token {
       Token::Pound         => write!(f, "Pound"),
       Token::Dollar        => write!(f, "Dollar"),
       Token::Question      => write!(f, "Question"),
-      Token::Underscore    => write!(f, "Underscore"),  
+      Token::Underscore    => write!(f, "Underscore"),
       Token::OpenDelim(t)  => write!(f, "{:?}", t),
       Token::CloseDelim(t) => write!(f, "{:?}", t),
-            
+
       Token::Literal(_, _) => write!(f, "Literal"),
       Token::Ident(n, _)   => write!(f, "Ident({})", n),
       Token::Whitespace    => write!(f, "Whitespace"),
@@ -336,7 +336,7 @@ declare_special_idents_and_keywords! {
         (40,                         Continue,   "continue");
         (43,                         Where,      "where");
         'reserved:
-        (44,                         Virtual,    "select");        
+        (44,                         Virtual,    "select");
         (55,                         Do,         "do");
     }
 }
@@ -348,7 +348,7 @@ pub type IdentInterner = StrInterner;
 // fresh one.
 // FIXME(eddyb) #8726 This should probably use a thread-local reference.
 pub fn get_ident_interner() -> Rc<IdentInterner> {
-    thread_local!(static KEY: Rc<::token::IdentInterner> = {
+    thread_local!(static KEY: Rc<::parser::token::IdentInterner> = {
         Rc::new(mk_fresh_ident_interner())
     });
     KEY.with(|k| k.clone())

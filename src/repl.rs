@@ -1,34 +1,32 @@
 #![feature(libc)]
 extern crate libc;
 extern crate parser;
-extern crate readline;
+extern crate rl_sys;
 
 use std::rc::Rc;
 
-use readline::*;
-use parser::lexer::{Reader, StringReader};
-use parser::token::Token;
+use rl_sys::readline;
+use parser::parser::lexer::{Reader, StringReader};
+use parser::parser::token::Token;
 
 pub fn main() {
-  unsafe {
     loop {
-      let line = readline(from_str("\x1b[33mtkm> \x1b[0m"));
-      if line.is_null() {
-        break;
-      }
+      match readline::readline("\x1b[33mtkm> \x1b[0m") {
+        Ok(Some(line)) => {
+          let mut sr = StringReader::new(Rc::new(line));
+          loop {
+            let toksp = sr.next_token();
+            print!("{} ", toksp.tok);
 
-      let mut sr = StringReader::new(Rc::new(to_str(line).to_string()));
-      loop {
-        let toksp = sr.next_token();
-        print!("{} ", toksp.tok);
-
-        if toksp.tok == Token::Eof {
-          println!("");
-          break;
+            if toksp.tok == Token::Eof {
+              println!("");
+              break;
+            }
+          }
         }
+        Ok(None) => { break; }
+        Err(msg) => panic!("{}", msg)
       }
-
-      add_history(line);
     }
-  }
+  
 }

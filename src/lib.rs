@@ -9,6 +9,9 @@ extern crate log;
 
 mod ast;
 mod codemap;
-mod interner;
-pub mod token;
-pub mod lexer;
+pub mod errors;
+pub mod parser;
+
+pub mod util {
+  pub mod interner;
+}

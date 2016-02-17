@@ -7,8 +7,11 @@ authors = ["Hyunsik Choi <hyunsik@apache.org>"]
 name = "repl"
 path = "src/repl.rs"
 
-[dependencies.readline]
-path = "src/readline"
+[lib]
+name = "parser"
+path = "src/lib.rs"
 
-[dependencies.parser]
-path = "src/parser"
+[dependencies]
+log = "0.3.4"
+env_logger = "0.3.2"
+rl-sys = "~0.4.1"

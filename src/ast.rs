@@ -1,7 +1,7 @@
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
-use token;
+use parser::token;
 
 /// A name is a part of an identifier, representing a string or gensym. It's
 /// the result of interning.

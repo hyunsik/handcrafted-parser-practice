@@ -1,14 +1,10 @@
-#![feature(unicode)]
-#![feature(convert)]
-#![feature(libc)]
-
 use std::mem::replace;
 use std::ops::{Add, Sub};
 use std::rc::Rc;
 
 use ast;
 use codemap::{self, BytePos, CharPos, Pos, Span};
-use token::{self, BinOpToken, IdentStyle, Literal, Token, str_to_ident};
+use parser::token::{self, BinOpToken, IdentStyle, Literal, Token, str_to_ident};
 
 pub struct FatalError;
 
@@ -557,7 +553,7 @@ impl StringReader {
 #[cfg(test)]
 mod tests {
   use std::rc::Rc;
-  use token::Token;
+  use parser::token::{self, Token};
   use super::*;
   use env_logger;
 

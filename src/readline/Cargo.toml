@@ -1,8 +1,0 @@
-[package]
-name = "readline"
-version = "0.1.0"
-authors = ["Hyunsik Choi <hyunsik@apache.org>"]
-
-[lib]
-name = "readline"
-path = "lib.rs"
