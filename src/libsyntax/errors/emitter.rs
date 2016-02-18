@@ -2,7 +2,7 @@ use self::Destination::*;
 
 use codemap::{self, COMMAND_LINE_SP, DUMMY_SP, Pos, Span, MultiSpan};
 
-use errors::{Level, RenderSpan, CodeSuggestion, DiagnosticBuilder};
+use errors::{Level, RenderSpan, CodeSuggestion, DiagnosticBuilder, SubDiagnostic};
 use errors::RenderSpan::*;
 use errors::Level::*;
 

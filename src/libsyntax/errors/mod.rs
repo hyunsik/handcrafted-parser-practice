@@ -68,7 +68,20 @@ pub struct DiagnosticBuilder<'a> {
     children: Vec<SubDiagnostic>,
 }
 
+/// For example a note attached to an error.
+struct SubDiagnostic {
+    level: Level,
+    message: String,
+    span: Option<MultiSpan>,
+    render_span: Option<RenderSpan>,
+}
+
 impl<'a> DiagnosticBuilder<'a> {
+  pub fn span<S: Into<MultiSpan>>(&mut self, sp: S) -> &mut Self {
+        self.span = Some(sp.into());
+        self
+    }
+
   /// Convenience function for internal use, clients should use one of the
     /// struct_* methods on Handler.
     fn new(emitter: &'a RefCell<Box<Emitter>>,
@@ -84,9 +97,20 @@ impl<'a> DiagnosticBuilder<'a> {
         }
     }
 
-    pub fn span<S: Into<MultiSpan>>(&mut self, sp: S) -> &mut Self {
-        self.span = Some(sp.into());
-        self
+    /// Convenience function for internal use, clients should use one of the
+    /// public methods above.
+    fn sub(&mut self,
+           level: Level,
+           message: &str,
+           span: Option<MultiSpan>,
+           render_span: Option<RenderSpan>) {
+        let sub = SubDiagnostic {
+            level: level,
+            message: message.to_owned(),
+            span: span,
+            render_span: render_span,
+        };
+        self.children.push(sub);
     }
 }
 
@@ -139,15 +163,6 @@ impl Handler {
     }
 
 }
-
-/// For example a note attached to an error.
-struct SubDiagnostic {
-    level: Level,
-    message: String,
-    span: Option<MultiSpan>,
-    render_span: Option<RenderSpan>,
-}
-
 
 #[derive(Copy, PartialEq, Clone, Debug)]
 pub enum Level {
