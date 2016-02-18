@@ -3,6 +3,7 @@ use std::rc::Rc;
 
 use ast::TokenTree;
 use codemap::Span;
+use errors::DiagnosticBuilder;
 use print::pprust;
 use parser::obsolete::ObsoleteSyntax;
 use parser::ParseSess;
@@ -145,6 +146,10 @@ impl<'a> Parser<'a> {
         }
         Ok(tts)
     }*/
+
+    pub fn fatal(&self, m: &str) -> DiagnosticBuilder<'a> {
+        self.sess.span_diagnostic.struct_span_fatal(self.span, m)
+    }
 }
 
 

@@ -68,6 +68,28 @@ pub struct DiagnosticBuilder<'a> {
     children: Vec<SubDiagnostic>,
 }
 
+impl<'a> DiagnosticBuilder<'a> {
+  /// Convenience function for internal use, clients should use one of the
+    /// struct_* methods on Handler.
+    fn new(emitter: &'a RefCell<Box<Emitter>>,
+           level: Level,
+           message: &str) -> DiagnosticBuilder<'a> {
+        DiagnosticBuilder {
+            emitter: emitter,
+            level: level,
+            message: message.to_owned(),
+            code: None,
+            span: None,
+            children: vec![],
+        }
+    }
+
+    pub fn span<S: Into<MultiSpan>>(&mut self, sp: S) -> &mut Self {
+        self.span = Some(sp.into());
+        self
+    }
+}
+
 /// A handler deals with errors; certain errors
 /// (fatal, bug, unimpl) may cause immediate exit,
 /// others log errors for later reporting.
@@ -101,6 +123,21 @@ impl Handler {
             delayed_span_bug: RefCell::new(None),
         }
     }
+
+    pub fn struct_span_fatal<'a, S: Into<MultiSpan>>(&'a self,
+                                                     sp: S,
+                                                     msg: &str)
+                                                     -> DiagnosticBuilder<'a> {
+        self.bump_err_count();
+        let mut result = DiagnosticBuilder::new(&self.emit, Level::Fatal, msg);
+        result.span(sp);
+        result
+    }
+
+    pub fn bump_err_count(&self) {
+        self.err_count.set(self.err_count.get() + 1);
+    }
+
 }
 
 /// For example a note attached to an error.

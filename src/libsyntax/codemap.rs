@@ -122,6 +122,12 @@ impl MultiSpan {
     }
 }
 
+impl From<Span> for MultiSpan {
+    fn from(span: Span) -> MultiSpan {
+        MultiSpan { spans: vec![span] }
+    }
+}
+
 // _____________________________________________________________________________
 // FileMap, MultiByteChar, FileName, FileLines
 //
