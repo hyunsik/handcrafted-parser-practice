@@ -1,16 +1,13 @@
 [package]
-name = "repl"
+name = "syntax"
 version = "0.1.0"
 authors = ["Hyunsik Choi <hyunsik@apache.org>"]
 
-[[bin]]
-name = "repl"
-path = "src/repl.rs"
+[lib]
+name = "syntax"
+path = "lib.rs"
 
 [dependencies]
 log = "0.3.4"
 env_logger = "0.3.2"
-rl-sys = "~0.4.1"
-
-[dependencies.syntax]
-path = "src/libsyntax"
+bitflags = "0.4.0"

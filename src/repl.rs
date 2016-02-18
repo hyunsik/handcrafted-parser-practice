@@ -1,13 +1,13 @@
 #![feature(libc)]
 extern crate libc;
-extern crate parser;
+extern crate syntax;
 extern crate rl_sys;
 
 use std::rc::Rc;
 
 use rl_sys::readline;
-use parser::parser::lexer::{Reader, StringReader};
-use parser::parser::token::Token;
+use syntax::parser::lexer::{Reader, StringReader};
+use syntax::parser::token::Token;
 
 pub fn main() {
     loop {
@@ -28,5 +28,5 @@ pub fn main() {
         Err(msg) => panic!("{}", msg)
       }
     }
-  
+
 }

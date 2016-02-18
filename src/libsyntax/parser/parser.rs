@@ -2,12 +2,13 @@ use std::collections::HashSet;
 use std::rc::Rc;
 
 use ast::TokenTree;
+use codemap::Span;
+use print::pprust;
 use parser::obsolete::ObsoleteSyntax;
 use parser::ParseSess;
 use parser::token::{self, keywords};
 use parser::token::Token;
 use parser::lexer::{Reader, TokenAndSpan};
-use codemap::Span;
 
 bitflags! {
     flags Restrictions: u8 {
@@ -93,7 +94,7 @@ impl<'a> Parser<'a> {
             expected_tokens: Vec::new(),
         }
     }
-    /*
+
     /// Convert a token to a string using self's reader
     pub fn token_to_string(token: &token::Token) -> String {
         pprust::token_to_string(token)
@@ -103,7 +104,7 @@ impl<'a> Parser<'a> {
     pub fn this_token_to_string(&self) -> String {
         Parser::token_to_string(&self.token)
     }
-
+    /*
     /// parse a single token tree from the input.
     pub fn parse_token_tree(&mut self) -> Result<TokenTree, String> {
 
