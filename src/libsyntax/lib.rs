@@ -8,8 +8,8 @@ extern crate env_logger;
 #[macro_use]
 extern crate log;
 
-mod ast;
-mod codemap;
+pub mod ast;
+pub mod codemap;
 pub mod errors;
 pub mod parser;
 
