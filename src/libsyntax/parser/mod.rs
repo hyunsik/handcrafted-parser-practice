@@ -9,8 +9,7 @@ use std::path::{PathBuf};
 
 use ast;
 use codemap::{self, Span, CodeMap};
-
-pub struct Handler;
+use errors::{ColorConfig, Handler, DiagnosticBuilder};
 
 /// Info about a parsing session.
 pub struct ParseSess {
@@ -23,7 +22,8 @@ pub struct ParseSess {
 impl ParseSess {
     pub fn new() -> ParseSess {
         let cm = Rc::new(CodeMap::new());
-        ParseSess::with_span_handler(Handler, cm)
+        let handler = Handler::with_tty_emitter(ColorConfig::Auto, None, true, false, cm.clone());
+        ParseSess::with_span_handler(handler, cm)
     }
 
     pub fn with_span_handler(handler: Handler, code_map: Rc<CodeMap>) -> ParseSess {

@@ -109,6 +109,19 @@ pub fn mk_sp(lo: BytePos, hi: BytePos) -> Span {
   Span {lo: lo, hi: hi}
 }
 
+impl MultiSpan {
+    pub fn new() -> MultiSpan {
+        MultiSpan { spans: Vec::new() }
+    }
+
+    pub fn to_span_bounds(&self) -> Span {
+        assert!(!self.spans.is_empty());
+        let Span { lo, .. } = *self.spans.first().unwrap();
+        let Span { hi, .. } = *self.spans.last().unwrap();
+        Span { lo: lo, hi: hi  }
+    }
+}
+
 // _____________________________________________________________________________
 // FileMap, MultiByteChar, FileName, FileLines
 //
