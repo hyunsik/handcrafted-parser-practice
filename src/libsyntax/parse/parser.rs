@@ -6,12 +6,12 @@ use ast::TokenTree;
 use codemap::Span;
 use errors::DiagnosticBuilder;
 use print::pprust;
-use parser::obsolete::ObsoleteSyntax;
-use parser::ParseSess;
-use parser::token::{self, keywords};
-use parser::token::Token;
-use parser::lexer::{Reader, TokenAndSpan};
-use parser::PResult;
+use parse::obsolete::ObsoleteSyntax;
+use parse::ParseSess;
+use parse::token::{self, keywords};
+use parse::token::Token;
+use parse::lexer::{Reader, TokenAndSpan};
+use parse::PResult;
 
 bitflags! {
     flags Restrictions: u8 {

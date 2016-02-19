@@ -1,7 +1,7 @@
 use ast;
-use parser::{ParseSess,PResult,filemap_to_tts};
-use parser::parser::Parser;
-use parser::token;
+use parse::{ParseSess,PResult,filemap_to_tts};
+use parse::parser::Parser;
+use parse::token;
 
 /// Map a string to tts, using a made-up filename:
 pub fn string_to_tts(source_str: String) -> Vec<ast::TokenTree> {

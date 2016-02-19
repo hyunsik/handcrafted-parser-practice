@@ -32,7 +32,7 @@ macro_rules! panictry {
 pub mod ast;
 pub mod codemap;
 pub mod errors;
-pub mod parser;
+pub mod parse;
 
 pub mod print {
   pub mod pprust;

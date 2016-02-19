@@ -380,7 +380,7 @@ pub type IdentInterner = StrInterner;
 // fresh one.
 // FIXME(eddyb) #8726 This should probably use a thread-local reference.
 pub fn get_ident_interner() -> Rc<IdentInterner> {
-    thread_local!(static KEY: Rc<::parser::token::IdentInterner> = {
+    thread_local!(static KEY: Rc<::parse::token::IdentInterner> = {
         Rc::new(mk_fresh_ident_interner())
     });
     KEY.with(|k| k.clone())

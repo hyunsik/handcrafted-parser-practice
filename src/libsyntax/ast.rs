@@ -2,7 +2,7 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
-use parser::token;
+use parse::token;
 use codemap::Span;
 
 /// A name is a part of an identifier, representing a string or gensym. It's

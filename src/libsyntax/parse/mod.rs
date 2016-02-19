@@ -1,7 +1,7 @@
 use ast;
 use codemap::{self, Span, CodeMap, FileMap};
 use errors::{ColorConfig, Handler, DiagnosticBuilder};
-use parser::parser::Parser;
+use parse::parser::Parser;
 
 use std::cell::RefCell;
 use std::path::{PathBuf};

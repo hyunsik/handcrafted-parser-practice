@@ -5,7 +5,7 @@ use std::rc::Rc;
 use ast;
 use codemap::{self, BytePos, CharPos, Pos, Span};
 use errors::{FatalError, Handler, DiagnosticBuilder};
-use parser::token::{self, str_to_ident};
+use parse::token::{self, str_to_ident};
 
 pub trait Reader {
     fn is_eof(&self) -> bool;

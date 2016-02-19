@@ -1,6 +1,6 @@
 use std::iter;
 
-use parser::token::{self, BinOpToken, Token, InternedString};
+use parse::token::{self, BinOpToken, Token, InternedString};
 
 pub fn binop_to_string(op: BinOpToken) -> &'static str {
     match op {

@@ -6,9 +6,9 @@ extern crate rl_sys;
 use std::rc::Rc;
 
 use rl_sys::readline;
-use syntax::parser::ParseSess;
-use syntax::parser::lexer::{Reader, StringReader};
-use syntax::parser::token::Token;
+use syntax::parse::ParseSess;
+use syntax::parse::lexer::{Reader, StringReader};
+use syntax::parse::token::Token;
 
 pub fn main() {
   /*

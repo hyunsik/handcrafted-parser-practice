@@ -1,5 +1,5 @@
 use codemap::Span;
-use parser::parser;
+use parse::parser;
 
 /// The specific types of unsupported syntax
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
