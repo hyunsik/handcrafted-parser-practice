@@ -127,14 +127,14 @@ pub fn tts_to_parser<'a>(sess: &'a ParseSess,
 mod tests {
   use super::*;
   use codemap::{Span, BytePos, Pos};
+  use util::parser_testing::{string_to_tts};
 
   // produce a codemap::span
   fn sp(a: u32, b: u32) -> Span {
     Span {lo: BytePos(a), hi: BytePos(b)}
   }
-  /*
-  #[test] fn parse_exprs () {
-    // just make sure that they parse....
-    string_to_expr("3 + 4".to_string());
-  }*/
+
+  #[test] fn string_to_tts_1() {
+    let tts = string_to_tts("fn a (b : i32) { b; }".to_string());
+  }
 }
