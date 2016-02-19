@@ -227,6 +227,11 @@ impl CodeMap {
         self.file_loader.file_exists(path)
     }
 
+    pub fn load_file(&self, path: &Path) -> io::Result<Rc<FileMap>> {
+        let src = try!(self.file_loader.read_file(path));
+        Ok(self.new_filemap(path.to_str().unwrap().to_string(), src))
+    }
+
     fn next_start_pos(&self) -> usize {
         let files = self.files.borrow();
         match files.last() {

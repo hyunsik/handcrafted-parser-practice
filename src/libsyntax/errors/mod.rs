@@ -231,13 +231,62 @@ impl Handler {
         result
     }
 
+    pub fn span_fatal<S: Into<MultiSpan>>(&self, sp: S, msg: &str) -> FatalError {
+        if self.treat_err_as_bug {
+            self.span_bug(sp, msg);
+        }
+        self.emit(Some(&sp.into()), msg, Fatal);
+        self.bump_err_count();
+        return FatalError;
+    }
+
+    pub fn span_err<S: Into<MultiSpan>>(&self, sp: S, msg: &str) {
+        if self.treat_err_as_bug {
+            self.span_bug(sp, msg);
+        }
+        self.emit(Some(&sp.into()), msg, Error);
+        self.bump_err_count();
+    }
+
+    pub fn span_bug<S: Into<MultiSpan>>(&self, sp: S, msg: &str) -> ! {
+        self.emit(Some(&sp.into()), msg, Bug);
+        panic!(ExplicitBug);
+    }
+
     pub fn bump_err_count(&self) {
         self.err_count.set(self.err_count.get() + 1);
+    }
+
+    pub fn fatal(&self, msg: &str) -> FatalError {
+        if self.treat_err_as_bug {
+            self.bug(msg);
+        }
+        self.emit.borrow_mut().emit(None, msg, None, Fatal);
+        self.bump_err_count();
+        FatalError
+    }
+    pub fn err(&self, msg: &str) {
+        if self.treat_err_as_bug {
+            self.bug(msg);
+        }
+        self.emit.borrow_mut().emit(None, msg, None, Error);
+        self.bump_err_count();
+    }
+    pub fn warn(&self, msg: &str) {
+        self.emit.borrow_mut().emit(None, msg, None, Warning);
     }
 
     pub fn bug(&self, msg: &str) -> ! {
         self.emit.borrow_mut().emit(None, msg, None, Bug);
         panic!(ExplicitBug);
+    }
+
+    pub fn emit(&self,
+                msp: Option<&MultiSpan>,
+                msg: &str,
+                lvl: Level) {
+        if lvl == Warning && !self.can_emit_warnings { return }
+        self.emit.borrow_mut().emit(msp, msg, None, lvl);
     }
 
 }
