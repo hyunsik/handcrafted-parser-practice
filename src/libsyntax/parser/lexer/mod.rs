@@ -4,9 +4,8 @@ use std::rc::Rc;
 
 use ast;
 use codemap::{self, BytePos, CharPos, Pos, Span};
+use errors::{FatalError, Handler, DiagnosticBuilder};
 use parser::token::{self, str_to_ident};
-
-pub struct FatalError;
 
 pub trait Reader {
     fn is_eof(&self) -> bool;
@@ -37,20 +36,24 @@ pub struct TokenAndSpan {
   pub sp: Span,
 }
 
-pub struct StringReader {
-  /// The absolute offset within the codemap of the next character to read
-  pub pos: BytePos,
-  /// The absolute offset within the codemap of the last character read(curr)
-  pub last_pos: BytePos,
-  /// The column of the next character to read
-  pub col: CharPos,
-  /// The last character to be read
-  pub curr: Option<char>,
+pub struct StringReader<'a> {
+  pub span_diagnostic: &'a Handler,
+    /// The absolute offset within the codemap of the next character to read
+    pub pos: BytePos,
+    /// The absolute offset within the codemap of the last character read(curr)
+    pub last_pos: BytePos,
+    /// The column of the next character to read
+    pub col: CharPos,
+    /// The last character to be read
+    pub curr: Option<char>,
+    pub filemap: Rc<codemap::FileMap>,
+    // cached:
+    pub peek_tok: token::Token,
+    pub peek_span: Span,
 
-  /* cached: */
-  pub peek_tok: token::Token,
-  pub peek_span: Span,
-  pub source_text: Rc<String>
+    // cache a direct reference to the source text, so that we don't have to
+    // retrieve it via `self.filemap.src.as_ref().unwrap()` all the time.
+    source_text: Rc<String>,
 }
 
 pub fn char_at(s: &str, byte: usize) -> char {
@@ -92,7 +95,7 @@ fn ident_continue(c: Option<char>) -> bool {
     || (c > '\x7f' && c.is_xid_continue())
 }
 
-impl<'a> Reader for StringReader {
+impl<'a> Reader for StringReader<'a> {
   fn is_eof(&self) -> bool { self.curr.is_none() }
 
   fn next_token(&mut self) -> TokenAndSpan {
@@ -116,27 +119,43 @@ impl<'a> Reader for StringReader {
   }
 }
 
-impl StringReader {
+impl<'a> StringReader<'a> {
 
-  fn new_raw(source_text: Rc<String>) -> StringReader {
-    let mut sr = StringReader {
-      pos: BytePos(0),
-      last_pos: BytePos(0),
-      col: CharPos(0),
-      curr: Some('\n'),
-      peek_tok: token::Eof,
-      peek_span: codemap::DUMMY_SP,
-      source_text: source_text
-    };
-    sr.bump();
-    sr
-  }
+  /// For comments.rs, which hackily pokes into pos and curr
+    pub fn new_raw<'b>(span_diagnostic: &'b Handler,
+                       filemap: Rc<codemap::FileMap>)
+                       -> StringReader<'b> {
+        if filemap.src.is_none() {
+            span_diagnostic.bug(&format!("Cannot lex filemap \
+                                          without source: {}",
+                                         filemap.name)[..]);
+        }
 
-  pub fn new(source_text: Rc<String>) -> StringReader {
-    let mut sr = StringReader::new_raw(source_text);
-    sr.advance_token();
-    sr
-  }
+        let source_text = (*filemap.src.as_ref().unwrap()).clone();
+
+        let mut sr = StringReader {
+            span_diagnostic: span_diagnostic,
+            pos: filemap.start_pos,
+            last_pos: filemap.start_pos,
+            col: CharPos(0),
+            curr: Some('\n'),
+            filemap: filemap,
+            // dummy values; not read
+            peek_tok: token::Eof,
+            peek_span: codemap::DUMMY_SP,
+            source_text: source_text,
+        };
+        sr.bump();
+        sr
+    }
+
+  pub fn new<'b>(span_diagnostic: &'b Handler,
+                   filemap: Rc<codemap::FileMap>)
+                   -> StringReader<'b> {
+        let mut sr = StringReader::new_raw(span_diagnostic, filemap);
+        sr.advance_token();
+        sr
+    }
 
   pub fn curr_is(&self, c: char) -> bool {
     self.curr == Some(c)

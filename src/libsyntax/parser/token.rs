@@ -114,6 +114,54 @@ pub enum Token {
     Eof,
 }
 
+impl Token {
+    /// Returns `true` if the token starts with '>'.
+    pub fn is_like_gt(&self) -> bool {
+        match *self {
+            BinOp(Shr) | BinOpEq(Shr) | Gt | Ge => true,
+            _ => false,
+        }
+    }
+
+    /// Returns `true` if the token can appear at the start of an expression.
+    pub fn can_begin_expr(&self) -> bool {
+        match *self {
+            OpenDelim(_)                => true,
+            Ident(_, _)                 => true,
+            Underscore                  => true,
+            Tilde                       => true,
+            Literal(_, _)               => true,
+            Not                         => true,
+            BinOp(Minus)                => true,
+            BinOp(Star)                 => true,
+            BinOp(And)                  => true,
+            BinOp(Or)                   => true, // in lambda syntax
+            OrOr                        => true, // in lambda syntax
+            AndAnd                      => true, // double borrow
+            DotDot                      => true, // range notation
+            ColonColon                  => true,
+            Pound                       => true, // for expression attributes
+            _                           => false,
+        }
+    }
+
+    /// Returns `true` if the token is any literal
+    pub fn is_lit(&self) -> bool {
+        match *self {
+            Literal(_, _) => true,
+            _          => false,
+        }
+    }
+
+    /// Returns `true` if the token is an identifier.
+    pub fn is_ident(&self) -> bool {
+        match *self {
+            Ident(_, _) => true,
+            _           => false,
+        }
+    }
+}
+
 impl fmt::Display for Token {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     match *self {

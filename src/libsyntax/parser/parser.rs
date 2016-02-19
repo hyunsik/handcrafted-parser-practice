@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::mem;
 use std::rc::Rc;
 
 use ast::TokenTree;
@@ -10,6 +11,7 @@ use parser::ParseSess;
 use parser::token::{self, keywords};
 use parser::token::Token;
 use parser::lexer::{Reader, TokenAndSpan};
+use parser::PResult;
 
 bitflags! {
     flags Restrictions: u8 {
@@ -105,11 +107,11 @@ impl<'a> Parser<'a> {
     pub fn this_token_to_string(&self) -> String {
         Parser::token_to_string(&self.token)
     }
-    /*
-    /// parse a single token tree from the input.
-    pub fn parse_token_tree(&mut self) -> Result<TokenTree, String> {
 
-      fn parse_non_delim_tt_tok<'b>(p: &mut Parser<'b>) -> Result<TokenTree, String> {
+    /// parse a single token tree from the input.
+    pub fn parse_token_tree(&mut self) -> PResult<'a, TokenTree> {
+
+      fn parse_non_delim_tt_tok<'b>(p: &mut Parser<'b>) -> PResult<'b, TokenTree> {
         match p.token {
           token::CloseDelim(_) => {
                     let token_str = p.this_token_to_string();
@@ -125,7 +127,8 @@ impl<'a> Parser<'a> {
                 },
                 /* we ought to allow different depths of unquotation */
                 token::Dollar if p.quote_depth > 0 => {
-                    p.parse_unquoted()
+                    //p.parse_unquoted()
+                    unimplemented!()
                 }
                 _ => {
                     Ok(TokenTree::Token(p.span, p.bump_and_get()))
@@ -133,19 +136,54 @@ impl<'a> Parser<'a> {
         }
       }
 
-      Err("".to_string())
+      unimplemented!()
+    }
+
+    /// Advance the parser by one token
+    pub fn bump(&mut self) {
+        self.last_span = self.span;
+        // Stash token for error recovery (sometimes; clone is not necessarily cheap).
+        self.last_token = if self.token.is_ident() ||
+                          self.token == token::Comma {
+            Some(Box::new(self.token.clone()))
+        } else {
+            None
+        };
+
+        // Avoid token copies with `replace`.
+        let buffer_start = self.buffer_start as usize;
+        let next_index = (buffer_start + 1) & 3;
+        self.buffer_start = next_index as isize;
+
+        let placeholder = TokenAndSpan {
+           tok: token::Underscore,
+           sp: self.span,
+        };
+        let next = mem::replace(&mut self.buffer[buffer_start], placeholder);
+
+        self.span = next.sp;
+        self.token = next.tok;
+        self.tokens_consumed += 1;
+        self.expected_tokens.clear();
+    }
+
+    /// Advance the parser by one token and return the bumped token.
+    pub fn bump_and_get(&mut self) -> token::Token {
+        let old_token = mem::replace(&mut self.token, token::Underscore);
+        self.bump();
+        old_token
     }
 
 
     // parse a stream of tokens into a list of TokenTree's,
     // up to EOF.
-    pub fn parse_all_token_trees(&mut self) -> Result<Vec<TokenTree>, String> {
+    pub fn parse_all_token_trees(&mut self) -> PResult<'a, Vec<TokenTree>> {
         let mut tts = Vec::new();
         while self.token != Token::Eof {
             tts.push(try!(self.parse_token_tree()));
         }
         Ok(tts)
-    }*/
+    }
 
     pub fn fatal(&self, m: &str) -> DiagnosticBuilder<'a> {
         self.sess.span_diagnostic.struct_span_fatal(self.span, m)

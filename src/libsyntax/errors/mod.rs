@@ -9,7 +9,7 @@ use codemap::{self, CodeMap, MultiSpan};
 use errors::emitter::{Emitter, EmitterWriter, Registry};
 
 use std::cell::{RefCell, Cell};
-use std::fmt;
+use std::{error, fmt};
 use std::rc::Rc;
 use term;
 
@@ -56,6 +56,42 @@ impl RenderSpan {
     }
 }
 
+/// Used as a return value to signify a fatal error occurred. (It is also
+/// used as the argument to panic at the moment, but that will eventually
+/// not be true.)
+#[derive(Copy, Clone, Debug)]
+#[must_use]
+pub struct FatalError;
+
+impl fmt::Display for FatalError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(f, "parser fatal error")
+    }
+}
+
+impl error::Error for FatalError {
+    fn description(&self) -> &str {
+        "The parser has encountered a fatal error"
+    }
+}
+
+/// Signifies that the compiler died with an explicit call to `.bug`
+/// or `.span_bug` rather than a failed assertion, etc.
+#[derive(Copy, Clone, Debug)]
+pub struct ExplicitBug;
+
+impl fmt::Display for ExplicitBug {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(f, "parser internal bug")
+    }
+}
+
+impl error::Error for ExplicitBug {
+    fn description(&self) -> &str {
+        "The parser has encountered an internal bug"
+    }
+}
+
 
 /// Used for emitting structured error messages and other diagnostic information.
 #[must_use]
@@ -77,8 +113,45 @@ struct SubDiagnostic {
 }
 
 impl<'a> DiagnosticBuilder<'a> {
+  /// Emit the diagnostic.
+    pub fn emit(&mut self) {
+        if self.cancelled() {
+            return;
+        }
+
+        self.emitter.borrow_mut().emit_struct(&self);
+        self.cancel();
+
+        // if self.is_fatal() {
+        //     panic!(FatalError);
+        // }
+    }
+
+    /// Cancel the diagnostic (a structured diagnostic must either be emitted or
+    /// cancelled or it will panic when dropped).
+    /// BEWARE: if this DiagnosticBuilder is an error, then creating it will
+    /// bump the error count on the Handler and cancelling it won't undo that.
+    /// If you want to decrement the error count you should use `Handler::cancel`.
+    pub fn cancel(&mut self) {
+        self.level = Level::Cancelled;
+    }
+
+    pub fn cancelled(&self) -> bool {
+        self.level == Level::Cancelled
+    }
+}
+
+impl<'a> DiagnosticBuilder<'a> {
   pub fn span<S: Into<MultiSpan>>(&mut self, sp: S) -> &mut Self {
         self.span = Some(sp.into());
+        self
+    }
+
+    pub fn span_note<S: Into<MultiSpan>>(&mut self,
+                                         sp: S,
+                                         msg: &str)
+                                         -> &mut DiagnosticBuilder<'a> {
+        self.sub(Level::Note, msg, Some(sp.into()), None);
         self
     }
 
@@ -160,6 +233,11 @@ impl Handler {
 
     pub fn bump_err_count(&self) {
         self.err_count.set(self.err_count.get() + 1);
+    }
+
+    pub fn bug(&self, msg: &str) -> ! {
+        self.emit.borrow_mut().emit(None, msg, None, Bug);
+        panic!(ExplicitBug);
     }
 
 }

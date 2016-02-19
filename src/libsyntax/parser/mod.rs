@@ -1,15 +1,21 @@
-pub mod obsolete;
-pub mod parser;
-pub mod token;
-pub mod lexer;
+use ast;
+use codemap::{self, Span, CodeMap, FileMap};
+use errors::{ColorConfig, Handler, DiagnosticBuilder};
+use parser::parser::Parser;
 
-use std::rc::Rc;
 use std::cell::RefCell;
 use std::path::{PathBuf};
+use std::rc::Rc;
 
-use ast;
-use codemap::{self, Span, CodeMap};
-use errors::{ColorConfig, Handler, DiagnosticBuilder};
+pub type PResult<'a, T> = Result<T, DiagnosticBuilder<'a>>;
+
+#[macro_use]
+pub mod parser;
+
+pub mod lexer;
+pub mod token;
+pub mod obsolete;
+
 
 /// Info about a parsing session.
 pub struct ParseSess {
@@ -37,6 +43,16 @@ impl ParseSess {
     pub fn codemap(&self) -> &CodeMap {
         &self.code_map
     }
+}
+
+/// Given a filemap, produce a sequence of token-trees
+pub fn filemap_to_tts(sess: &ParseSess, filemap: Rc<FileMap>)
+    -> Vec<ast::TokenTree> {
+    // it appears to me that the cfg doesn't matter here... indeed,
+    // parsing tt's probably shouldn't require a parser at all.
+    let srdr = lexer::StringReader::new(&sess.span_diagnostic, filemap);
+    let mut p1 = Parser::new(sess, Box::new(srdr));
+    panictry!(p1.parse_all_token_trees())
 }
 
 /*
