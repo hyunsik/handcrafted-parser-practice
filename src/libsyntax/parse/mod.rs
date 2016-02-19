@@ -14,6 +14,8 @@ pub mod parser;
 
 pub mod lexer;
 pub mod token;
+
+pub mod common;
 pub mod obsolete;
 
 
@@ -126,8 +128,11 @@ pub fn tts_to_parser<'a>(sess: &'a ParseSess,
 #[cfg(test)]
 mod tests {
   use super::*;
+  use parse::token::Token;
   use codemap::{Span, BytePos, Pos};
   use util::parser_testing::{string_to_tts};
+  use parse::lexer::{Reader, StringReader};
+  use parse::parser::Parser;
 
   // produce a codemap::span
   fn sp(a: u32, b: u32) -> Span {
@@ -137,4 +142,27 @@ mod tests {
   #[test] fn string_to_tts_1() {
     let tts = string_to_tts("fn a (b : i32) { b; }".to_string());
   }
+
+  #[test] fn string_to_tts_2() {
+    let sess = ParseSess::new();
+    let mut sr = StringReader::new(
+      &sess.span_diagnostic,
+      sess.codemap().new_filemap("bogofile".to_string(), "let x = 1;".to_string()));
+      let mut p1 = Parser::new(&sess, Box::new(sr));
+
+      for tt in p1.parse_all_token_trees().ok().unwrap().iter() {
+        println!("{:?}", tt);
+      }
+      // loop {
+      //       let toksp = sr.next_token();
+      //       print!("{} ", toksp.tok);
+
+      //       if toksp.tok == Token::Eof {
+      //         println!("");
+      //         break;
+      //       }
+      //     }
+  }
+
+
 }

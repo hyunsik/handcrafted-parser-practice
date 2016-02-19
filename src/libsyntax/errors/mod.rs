@@ -139,11 +139,13 @@ impl<'a> DiagnosticBuilder<'a> {
     pub fn cancelled(&self) -> bool {
         self.level == Level::Cancelled
     }
-}
 
-impl<'a> DiagnosticBuilder<'a> {
-  pub fn span<S: Into<MultiSpan>>(&mut self, sp: S) -> &mut Self {
-        self.span = Some(sp.into());
+    pub fn is_fatal(&self) -> bool {
+        self.level == Level::Fatal
+    }
+
+    pub fn note(&mut self , msg: &str) -> &mut DiagnosticBuilder<'a> {
+        self.sub(Level::Note, msg, None, None);
         self
     }
 
@@ -154,8 +156,83 @@ impl<'a> DiagnosticBuilder<'a> {
         self.sub(Level::Note, msg, Some(sp.into()), None);
         self
     }
+    pub fn warn(&mut self, msg: &str) -> &mut DiagnosticBuilder<'a> {
+        self.sub(Level::Warning, msg, None, None);
+        self
+    }
+    pub fn span_warn<S: Into<MultiSpan>>(&mut self,
+                                         sp: S,
+                                         msg: &str)
+                                         -> &mut DiagnosticBuilder<'a> {
+        self.sub(Level::Warning, msg, Some(sp.into()), None);
+        self
+    }
+    pub fn help(&mut self , msg: &str) -> &mut DiagnosticBuilder<'a> {
+        self.sub(Level::Help, msg, None, None);
+        self
+    }
+    pub fn span_help<S: Into<MultiSpan>>(&mut self,
+                                         sp: S,
+                                         msg: &str)
+                                         -> &mut DiagnosticBuilder<'a> {
+        self.sub(Level::Help, msg, Some(sp.into()), None);
+        self
+    }
 
-  /// Convenience function for internal use, clients should use one of the
+    /// Prints out a message with a suggested edit of the code.
+    ///
+    /// See `diagnostic::RenderSpan::Suggestion` for more information.
+    pub fn span_suggestion<S: Into<MultiSpan>>(&mut self,
+                                               sp: S,
+                                               msg: &str,
+                                               suggestion: String)
+                                               -> &mut DiagnosticBuilder<'a> {
+        self.sub(Level::Help, msg, None, Some(Suggestion(CodeSuggestion {
+            msp: sp.into(),
+            substitutes: vec![suggestion],
+        })));
+        self
+    }
+    pub fn span_end_note<S: Into<MultiSpan>>(&mut self,
+                                             sp: S,
+                                             msg: &str)
+                                             -> &mut DiagnosticBuilder<'a> {
+        self.sub(Level::Note, msg, None, Some(EndSpan(sp.into())));
+        self
+    }
+    pub fn fileline_warn<S: Into<MultiSpan>>(&mut self,
+                                             sp: S,
+                                             msg: &str)
+                                             -> &mut DiagnosticBuilder<'a> {
+        self.sub(Level::Warning, msg, None, Some(FileLine(sp.into())));
+        self
+    }
+    pub fn fileline_note<S: Into<MultiSpan>>(&mut self,
+                                             sp: S,
+                                             msg: &str)
+                                             -> &mut DiagnosticBuilder<'a> {
+        self.sub(Level::Note, msg, None, Some(FileLine(sp.into())));
+        self
+    }
+    pub fn fileline_help<S: Into<MultiSpan>>(&mut self,
+                                             sp: S,
+                                             msg: &str)
+                                             -> &mut DiagnosticBuilder<'a> {
+        self.sub(Level::Help, msg, None, Some(FileLine(sp.into())));
+        self
+    }
+
+    pub fn span<S: Into<MultiSpan>>(&mut self, sp: S) -> &mut Self {
+        self.span = Some(sp.into());
+        self
+    }
+
+    pub fn code(&mut self, s: String) -> &mut Self {
+        self.code = Some(s);
+        self
+    }
+
+    /// Convenience function for internal use, clients should use one of the
     /// struct_* methods on Handler.
     fn new(emitter: &'a RefCell<Box<Emitter>>,
            level: Level,
@@ -186,6 +263,24 @@ impl<'a> DiagnosticBuilder<'a> {
         self.children.push(sub);
     }
 }
+
+impl<'a> fmt::Debug for DiagnosticBuilder<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.message.fmt(f)
+    }
+}
+
+/// Destructor bomb - a DiagnosticBuilder must be either emitted or cancelled or
+/// we emit a bug.
+impl<'a> Drop for DiagnosticBuilder<'a> {
+    fn drop(&mut self) {
+        if !self.cancelled() {
+            self.emitter.borrow_mut().emit(None, "Error constructed but not emitted", None, Bug);
+            panic!();
+        }
+    }
+}
+
 
 /// A handler deals with errors; certain errors
 /// (fatal, bug, unimpl) may cause immediate exit,

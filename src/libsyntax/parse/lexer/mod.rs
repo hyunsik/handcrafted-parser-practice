@@ -55,7 +55,7 @@ impl<'a> TtReader<'a> {
 
 impl<'a> Reader for TtReader<'a> {
     fn is_eof(&self) -> bool {
-      self.tt.len() == 0 || self.cur_idx >= self.tt.len()
+      self.cur_tok == token::Eof
     }
 
     fn next_token(&mut self) -> TokenAndSpan {

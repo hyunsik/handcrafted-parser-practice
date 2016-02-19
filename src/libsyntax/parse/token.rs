@@ -160,6 +160,25 @@ impl Token {
             _           => false,
         }
     }
+
+    /// Returns `true` if the token is a path that is not followed by a `::`
+    /// token.
+    #[allow(non_upper_case_globals)]
+    pub fn is_plain_ident(&self) -> bool {
+        match *self {
+            Ident(_, Plain) => true,
+            _               => false,
+        }
+    }
+
+    /// Returns `true` if the token is a given keyword, `kw`.
+    #[allow(non_upper_case_globals)]
+    pub fn is_keyword(&self, kw: keywords::Keyword) -> bool {
+        match *self {
+            Ident(sid, Plain) => kw.to_name() == sid.name,
+            _                      => false,
+        }
+    }
 }
 
 impl fmt::Display for Token {
