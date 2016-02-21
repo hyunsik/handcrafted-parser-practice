@@ -1,9 +1,12 @@
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
+use rustc_serialize::{Encodable, Decodable, Encoder, Decoder};
 
-use parse::token;
 use codemap::Span;
+use parse::token;
+use ptr::P;
+
 
 /// A name is a part of an identifier, representing a string or gensym. It's
 /// the result of interning.
@@ -13,10 +16,10 @@ pub struct Name(pub u32);
 /// A SyntaxContext represents a chain of macro-expandings
 /// and renamings. Each macro expansion corresponds to
 /// a fresh u32. This u32 is a reference to a table stored
-// in thread-local storage.
-// The special value EMPTY_CTXT is used to indicate an empty
-// syntax context.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+/// in thread-local storage.
+/// The special value EMPTY_CTXT is used to indicate an empty
+/// syntax context.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, RustcEncodable, RustcDecodable)]
 pub struct SyntaxContext(pub u32);
 
 /// An identifier contains a Name (index into the interner
@@ -29,9 +32,9 @@ pub struct Ident {
 }
 
 impl Name {
-  pub fn as_str(self) -> token::InternedString {
-    token::InternedString::new_from_name(self)
-  }
+    pub fn as_str(self) -> token::InternedString {
+        token::InternedString::new_from_name(self)
+    }
 }
 
 impl fmt::Debug for Name {
@@ -43,6 +46,18 @@ impl fmt::Debug for Name {
 impl fmt::Display for Name {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Display::fmt(&self.as_str(), f)
+    }
+}
+
+impl Encodable for Name {
+    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+        s.emit_str(&self.as_str())
+    }
+}
+
+impl Decodable for Name {
+    fn decode<D: Decoder>(d: &mut D) -> Result<Name, D::Error> {
+        Ok(token::intern(&try!(d.read_str())[..]))
     }
 }
 
@@ -100,6 +115,18 @@ impl fmt::Debug for Ident {
 impl fmt::Display for Ident {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Display::fmt(&self.name, f)
+    }
+}
+
+impl Encodable for Ident {
+    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+        self.name.encode(s)
+    }
+}
+
+impl Decodable for Ident {
+    fn decode<D: Decoder>(d: &mut D) -> Result<Ident, D::Error> {
+        Ok(Ident::with_empty_ctxt(try!(Name::decode(d))))
     }
 }
 
@@ -161,4 +188,85 @@ pub enum TokenTree {
     /// A kleene-style repetition sequence with a span
     // FIXME(eddyb) #12938 Use DST.
     Sequence(Span, Rc<SequenceRepetition>),
+}
+
+pub type CrateNum = u32;
+
+pub type NodeId = u32;
+
+/// Node id used to represent the root of the crate.
+pub const CRATE_NODE_ID: NodeId = 0;
+
+/// When parsing and doing expansions, we initially give all AST nodes this AST
+/// node value. Then later, in the renumber pass, we renumber them to have
+/// small, positive ids.
+pub const DUMMY_NODE_ID: NodeId = !0;
+
+/*
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
+pub struct Ty {
+    pub id: NodeId,
+    pub node: TyKind,
+    pub span: Span,
+}
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
+/// The different kinds of types recognized by the compiler
+pub enum TyKind {
+    Vec(P<Ty>),
+    /// A fixed length array (`[T; n]`)
+    FixedLengthVec(P<Ty>, P<Expr>),
+    /// A raw pointer (`*const T` or `*mut T`)
+    Ptr(P<Ty>),
+    /// A reference (`&'a T` or `&'a mut T`)
+    Rptr(P<Ty>),
+    /// A bare function (e.g. `fn(usize) -> bool`)
+    BareFn(P<BareFnTy>),
+    /// A tuple (`(A, B, C, D,...)`)
+    Tup(Vec<P<Ty>> ),
+    /// A path (`module::module::...::Type`), optionally
+    /// "qualified", e.g. `<Vec<T> as SomeTrait>::SomeType`.
+    ///
+    /// Type parameters are stored in the Path itself
+    Path(Option<QSelf>, Path),
+    /// No-op; kept solely so that we can pretty-print faithfully
+    Paren(P<Ty>),
+    /// TyKind::Infer means the type should be inferred instead of it having been
+    /// specified. This can appear anywhere in a type.
+    Infer
+}
+*/
+
+/*
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
+pub enum FunctionRetTy {
+    /// Functions with return type `!`that always
+    /// raise an error or exit (i.e. never return to the caller)
+    None(Span),
+    /// Return type is not specified.
+    ///
+    /// Functions default to `()` and
+    /// closures default to inference. Span points to where return
+    /// type would be inserted.
+    Default(Span),
+    /// Everything else
+    Ty(P<Ty>),
+}
+
+impl FunctionRetTy {
+    pub fn span(&self) -> Span {
+        match *self {
+            FunctionRetTy::None(span) => span,
+            FunctionRetTy::Default(span) => span,
+            FunctionRetTy::Ty(ref ty) => ty.span,
+        }
+    }
+}*/
+
+/// Represents the header (not the body) of a function declaration
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
+pub struct FnDecl {
+    pub inputs: Vec<Arg>,
+    pub output: FunctionRetTy,
+    pub variadic: bool
 }

@@ -1,12 +1,14 @@
 #![feature(unicode)]
 #![feature(convert)]
 #![feature(libc)]
+#![feature(filling_drop)]
 
 #[macro_use] extern crate bitflags;
 extern crate libc;
 extern crate env_logger;
 #[macro_use]
 extern crate log;
+extern crate rustc_serialize;
 extern crate term;
 
 // A variant of 'try!' that panics on an Err. This is used as a crutch on the
@@ -29,10 +31,12 @@ macro_rules! panictry {
     })
 }
 
+pub mod abi;
 pub mod ast;
 pub mod codemap;
 pub mod errors;
 pub mod parse;
+pub mod ptr;
 
 pub mod print {
   pub mod pprust;

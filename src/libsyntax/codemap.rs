@@ -4,6 +4,7 @@ use std::io::{self,Read};
 use std::ops::{Add, Sub};
 use std::path::Path;
 use std::rc::Rc;
+use rustc_serialize::{Encodable, Decodable, Encoder, Decoder};
 
 pub trait Pos {
   fn from_usize(n: usize) -> Self;
@@ -39,6 +40,18 @@ impl Sub for BytePos {
 
     fn sub(self, rhs: BytePos) -> BytePos {
         BytePos((self.to_usize() - rhs.to_usize()) as u32)
+    }
+}
+
+impl Encodable for BytePos {
+    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+        s.emit_u32(self.0)
+    }
+}
+
+impl Decodable for BytePos {
+    fn decode<D: Decoder>(d: &mut D) -> Result<BytePos, D::Error> {
+        Ok(BytePos(try!{ d.read_u32() }))
     }
 }
 
@@ -125,6 +138,36 @@ impl MultiSpan {
 impl From<Span> for MultiSpan {
     fn from(span: Span) -> MultiSpan {
         MultiSpan { spans: vec![span] }
+    }
+}
+
+impl Encodable for Span {
+    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+        s.emit_struct("Span", 2, |s| {
+            try!(s.emit_struct_field("lo", 0, |s| {
+                self.lo.encode(s)
+            }));
+
+            s.emit_struct_field("hi", 1, |s| {
+                self.hi.encode(s)
+            })
+        })
+    }
+}
+
+impl Decodable for Span {
+    fn decode<D: Decoder>(d: &mut D) -> Result<Span, D::Error> {
+        d.read_struct("Span", 2, |d| {
+            let lo = try!(d.read_struct_field("lo", 0, |d| {
+                BytePos::decode(d)
+            }));
+
+            let hi = try!(d.read_struct_field("hi", 1, |d| {
+                BytePos::decode(d)
+            }));
+
+            Ok(mk_sp(lo, hi))
+        })
     }
 }
 
