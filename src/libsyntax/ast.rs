@@ -238,6 +238,17 @@ pub struct WhereBoundPredicate {
     pub bounded_ty: P<Ty>,
 }
 
+/// The set of MetaItems that define the compilation environment of the crate,
+/// used to drive conditional compilation
+pub type CrateConfig = Vec<P<MetaItem>> ;
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
+pub struct Crate {
+    pub module: Mod,
+    pub attrs: Vec<Attribute>,
+    pub config: CrateConfig,
+    pub span: Span,
+}
 
 pub type MetaItem = Spanned<MetaItemKind>;
 
@@ -1003,6 +1014,15 @@ impl FunctionRetTy {
             FunctionRetTy::Ty(ref ty) => ty.span,
         }
     }
+}
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
+pub struct Mod {
+    /// A span from the first token past `{` to the last token until `}`.
+    /// For `mod foo;`, the inner span ranges from the first token
+    /// to the last token in the external file.
+    pub inner: Span,
+    pub items: Vec<P<Item>>,
 }
 
 /// Meta-data associated with an item
