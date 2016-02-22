@@ -3,8 +3,8 @@ use std::slice;
 use std::mem;
 use std::rc::Rc;
 
-use ast::{Delimited, TokenTree};
-use codemap::Span;
+use ast::*;
+use codemap::{BytePos, Span};
 use errors::DiagnosticBuilder;
 use print::pprust;
 use parse;
@@ -15,6 +15,7 @@ use parse::token::{self, keywords};
 use parse::token::Token;
 use parse::lexer::{Reader, TokenAndSpan};
 use parse::PResult;
+use ptr::P;
 
 bitflags! {
     flags Restrictions: u8 {
@@ -390,7 +391,70 @@ impl<'a> Parser<'a> {
         self.token.is_keyword(kw)
     }
 
+    /// If the next token is the given keyword, eat it and return
+    /// true. Otherwise, return false.
+    pub fn eat_keyword(&mut self, kw: keywords::Keyword) -> bool {
+        if self.check_keyword(kw) {
+            self.bump();
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn fatal(&self, m: &str) -> DiagnosticBuilder<'a> {
         self.sess.span_diagnostic.struct_span_fatal(self.span, m)
+    }
+
+    /// Parse visibility: PUB or nothing
+    fn parse_visibility(&mut self) -> PResult<'a, Visibility> {
+        if self.eat_keyword(keywords::Pub) { Ok(Visibility::Public) }
+        else { Ok(Visibility::Inherited) }
+    }
+
+    /// Given a termination token, parse all of the items in a module
+    fn parse_mod_items(&mut self, term: &token::Token, inner_lo: BytePos) -> PResult<'a, Mod> {
+      unimplemented!()
+    }
+
+    /// Parse one of the items allowed by the flags.
+    /// NB: this function no longer parses the items inside an
+    /// extern crate.
+    fn parse_item_(&mut self, attrs: Vec<Attribute>,
+                   macros_allowed: bool, attributes_allowed: bool) -> PResult<'a, Option<P<Item>>> {
+      let lo = self.span.lo;
+
+      if self.eat_keyword(keywords::Use) {
+      }
+
+      if self.eat_keyword(keywords::Extern) {
+      }
+
+      if self.eat_keyword(keywords::Static) {
+      }
+
+      if self.eat_keyword(keywords::Const) {
+      }
+
+      if self.check_keyword(keywords::Fn) {
+      }
+
+      if self.eat_keyword(keywords::Mod) {
+      }
+
+      if self.eat_keyword(keywords::Type) {
+      }
+
+      if self.eat_keyword(keywords::Enum) {
+      }
+
+      if self.eat_keyword(keywords::Struct) {
+      }
+
+      unimplemented!()
+    }
+
+    pub fn parse_item(&mut self) -> PResult<'a, Option<P<Item>>> {
+      unimplemented!()
     }
 }

@@ -365,6 +365,7 @@ declare_special_idents_and_keywords! {
         (14,                         Crate,      "crate");
         (15,                         Else,       "else");
         (16,                         Enum,       "enum");
+        (17,                         Extern,     "extern");
         (18,                         False,      "false");
         (19,                         Fn,         "fn");
         (20,                         For,        "for");
@@ -373,6 +374,8 @@ declare_special_idents_and_keywords! {
         (24,                         Let,        "let");
         (25,                         Loop,       "loop");
         (26,                         Match,      "match");
+        (27,                         Mod,        "mod");
+        (30,                         Pub,        "pub");
         (32,                         Return,     "return");
         // Static and Self are also special idents (prefill de-dupes)
         (super::STATIC_KEYWORD_NAME_NUM, Static, "static");
@@ -386,6 +389,7 @@ declare_special_idents_and_keywords! {
         (38,                         Use,        "use");
         (39,                         While,      "while");
         (40,                         Continue,   "continue");
+        (42,                         Const,      "const");
         (43,                         Where,      "where");
         'reserved:
         (44,                         Virtual,    "select");
