@@ -7,6 +7,7 @@ pub use self::IdentStyle::*;
 use std::fmt;
 use std::ops::Deref;
 use std::rc::Rc;
+use rustc_serialize::{Encodable, Decodable, Encoder, Decoder};
 
 use ast;
 use util::interner::{self, StrInterner, RcStr};
@@ -487,6 +488,17 @@ impl<'a> PartialEq<InternedString> for &'a str {
     }
 }
 
+impl Decodable for InternedString {
+    fn decode<D: Decoder>(d: &mut D) -> Result<InternedString, D::Error> {
+        Ok(intern(try!(d.read_str()).as_ref()).as_str())
+    }
+}
+
+impl Encodable for InternedString {
+    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+        s.emit_str(&self.string)
+    }
+}
 
 /// Maps a string to its interned representation.
 #[inline]

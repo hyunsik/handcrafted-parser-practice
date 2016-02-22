@@ -1,4 +1,7 @@
+use std::io;
 use std::iter;
+
+use ast::{self, Expr};
 
 use parse::token::{self, BinOpToken, Token, InternedString};
 
@@ -90,5 +93,15 @@ pub fn token_to_string(tok: &Token) -> String {
         token::Shebang(s)           => format!("/* shebang: {}*/", s),
     }
 }
+
+/*
+pub fn ty_to_string(ty: &ast::Ty) -> String {
+    to_string(|s| s.print_type(ty))
+}
+
+pub fn path_to_string(p: &ast::Path) -> String {
+    to_string(|s| s.print_path(p, false, 0))
+}
+*/
 
 fn repeat(s: &str, n: usize) -> String { iter::repeat(s).take(n).collect() }

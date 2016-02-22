@@ -1,5 +1,5 @@
 use std::cell::{Cell, RefCell};
-use std::fs;
+use std::{fmt, fs};
 use std::io::{self,Read};
 use std::ops::{Add, Sub};
 use std::path::Path;
@@ -88,7 +88,7 @@ impl Sub for CharPos {
 /// able to use many of the functions on spans in codemap and you cannot assume
 /// that the length of the span = hi - lo; there may be space in the BytePos
 /// range between files.
-#[derive(Clone, Copy, Hash, Debug)]
+#[derive(Clone, Copy, Hash)]
 pub struct Span {
   pub lo: BytePos,
   pub hi: BytePos
@@ -117,28 +117,10 @@ impl PartialEq for Span {
 
 impl Eq for Span {}
 
-/* assuming that we're not in macro expansion */
-pub fn mk_sp(lo: BytePos, hi: BytePos) -> Span {
-  Span {lo: lo, hi: hi}
-}
-
-impl MultiSpan {
-    pub fn new() -> MultiSpan {
-        MultiSpan { spans: Vec::new() }
-    }
-
-    pub fn to_span_bounds(&self) -> Span {
-        assert!(!self.spans.is_empty());
-        let Span { lo, .. } = *self.spans.first().unwrap();
-        let Span { hi, .. } = *self.spans.last().unwrap();
-        Span { lo: lo, hi: hi  }
-    }
-}
-
-impl From<Span> for MultiSpan {
-    fn from(span: Span) -> MultiSpan {
-        MultiSpan { spans: vec![span] }
-    }
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug, Copy)]
+pub struct Spanned<T> {
+    pub node: T,
+    pub span: Span,
 }
 
 impl Encodable for Span {
@@ -168,6 +150,55 @@ impl Decodable for Span {
 
             Ok(mk_sp(lo, hi))
         })
+    }
+}
+
+fn default_span_debug(span: Span, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(f, "Span {{ lo: {:?}, hi: {:?} }}", span.lo, span.hi)
+}
+
+thread_local!(pub static SPAN_DEBUG: Cell<fn(Span, &mut fmt::Formatter) -> fmt::Result> =
+                Cell::new(default_span_debug));
+
+impl fmt::Debug for Span {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        SPAN_DEBUG.with(|span_debug| span_debug.get()(*self, f))
+    }
+}
+
+pub fn spanned<T>(lo: BytePos, hi: BytePos, t: T) -> Spanned<T> {
+    respan(mk_sp(lo, hi), t)
+}
+
+pub fn respan<T>(sp: Span, t: T) -> Spanned<T> {
+    Spanned {node: t, span: sp}
+}
+
+pub fn dummy_spanned<T>(t: T) -> Spanned<T> {
+    respan(DUMMY_SP, t)
+}
+
+/* assuming that we're not in macro expansion */
+pub fn mk_sp(lo: BytePos, hi: BytePos) -> Span {
+    Span {lo: lo, hi: hi}
+}
+
+impl MultiSpan {
+    pub fn new() -> MultiSpan {
+        MultiSpan { spans: Vec::new() }
+    }
+
+    pub fn to_span_bounds(&self) -> Span {
+        assert!(!self.spans.is_empty());
+        let Span { lo, .. } = *self.spans.first().unwrap();
+        let Span { hi, .. } = *self.spans.last().unwrap();
+        Span { lo: lo, hi: hi  }
+    }
+}
+
+impl From<Span> for MultiSpan {
+    fn from(span: Span) -> MultiSpan {
+        MultiSpan { spans: vec![span] }
     }
 }
 

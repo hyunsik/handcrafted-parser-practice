@@ -39,6 +39,7 @@ pub mod parse;
 pub mod ptr;
 
 pub mod print {
+  pub mod pp;
   pub mod pprust;
 }
 
