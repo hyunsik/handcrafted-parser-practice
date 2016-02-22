@@ -162,66 +162,6 @@ impl fmt::Display for Path {
     }
 }*/
 
-/// A delimited sequence of token trees
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub struct Delimited {
-    /// The type of delimiter
-    pub delim: token::DelimToken,
-    /// The span covering the opening delimiter
-    pub open_span: Span,
-    /// The delimited sequence of token trees
-    pub tts: Vec<TokenTree>,
-    /// The span covering the closing delimiter
-    pub close_span: Span,
-}
-
-/// A sequence of token trees
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub struct SequenceRepetition {
-    /// The sequence of token trees
-    pub tts: Vec<TokenTree>,
-    /// The optional separator
-    pub separator: Option<token::Token>,
-    /// Whether the sequence can be repeated zero (*), or one or more times (+)
-    pub op: KleeneOp,
-    /// The number of `MatchNt`s that appear in the sequence (and subsequences)
-    pub num_captures: usize,
-}
-
-/// A Kleene-style [repetition operator](http://en.wikipedia.org/wiki/Kleene_star)
-/// for token sequences.
-#[derive(Clone, PartialEq, Eq, Hash, Debug, Copy)]
-pub enum KleeneOp {
-    ZeroOrMore,
-    OneOrMore,
-}
-
-/// When the main rust parser encounters a syntax-extension invocation, it
-/// parses the arguments to the invocation as a token-tree. This is a very
-/// loose structure, such that all sorts of different AST-fragments can
-/// be passed to syntax extensions using a uniform type.
-///
-/// If the syntax extension is an MBE macro, it will attempt to match its
-/// LHS token tree against the provided token tree, and if it finds a
-/// match, will transcribe the RHS token tree, splicing in any captured
-/// macro_parser::matched_nonterminals into the `SubstNt`s it finds.
-///
-/// The RHS of an MBE macro is the only place `SubstNt`s are substituted.
-/// Nothing special happens to misnamed or misplaced `SubstNt`s.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub enum TokenTree {
-    /// A single token
-    Token(Span, token::Token),
-    /// A delimited sequence of token trees
-    Delimited(Span, Rc<Delimited>),
-
-    // This only makes sense in MBE macros.
-
-    /// A kleene-style repetition sequence with a span
-    // FIXME(eddyb) #12938 Use DST.
-    Sequence(Span, Rc<SequenceRepetition>),
-}
-
 pub type CrateNum = u32;
 
 pub type NodeId = u32;
@@ -334,7 +274,18 @@ impl PartialEq for MetaItemKind {
     }
 }
 
-pub struct Block;
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
+pub struct Block {
+    /// Statements in a block
+    pub stmts: Vec<Stmt>,
+    /// An expression at the end of the block
+    /// without a semicolon, if any
+    pub expr: Option<P<Expr>>,
+    pub id: NodeId,
+    /// Distinguishes between `unsafe { ... }` and `{ ... }`
+    pub rules: BlockCheckMode,
+    pub span: Span,
+}
 
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
 pub struct Pat {
@@ -347,6 +298,385 @@ pub struct Pat {
 pub enum Pat_ {
   /// Represents a wildcard pattern (`_`)
   PatWild,
+}
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug, Copy)]
+pub enum BinOpKind {
+    /// The `+` operator (addition)
+    Add,
+    /// The `-` operator (subtraction)
+    Sub,
+    /// The `*` operator (multiplication)
+    Mul,
+    /// The `/` operator (division)
+    Div,
+    /// The `%` operator (modulus)
+    Rem,
+    /// The `&&` operator (logical and)
+    And,
+    /// The `||` operator (logical or)
+    Or,
+    /// The `^` operator (bitwise xor)
+    BitXor,
+    /// The `&` operator (bitwise and)
+    BitAnd,
+    /// The `|` operator (bitwise or)
+    BitOr,
+    /// The `<<` operator (shift left)
+    Shl,
+    /// The `>>` operator (shift right)
+    Shr,
+    /// The `==` operator (equality)
+    Eq,
+    /// The `<` operator (less than)
+    Lt,
+    /// The `<=` operator (less than or equal to)
+    Le,
+    /// The `!=` operator (not equal to)
+    Ne,
+    /// The `>=` operator (greater than or equal to)
+    Ge,
+    /// The `>` operator (greater than)
+    Gt,
+}
+
+impl BinOpKind {
+    pub fn to_string(&self) -> &'static str {
+        use self::BinOpKind::*;
+        match *self {
+            Add => "+",
+            Sub => "-",
+            Mul => "*",
+            Div => "/",
+            Rem => "%",
+            And => "&&",
+            Or => "||",
+            BitXor => "^",
+            BitAnd => "&",
+            BitOr => "|",
+            Shl => "<<",
+            Shr => ">>",
+            Eq => "==",
+            Lt => "<",
+            Le => "<=",
+            Ne => "!=",
+            Ge => ">=",
+            Gt => ">",
+        }
+    }
+    pub fn lazy(&self) -> bool {
+        match *self {
+            BinOpKind::And | BinOpKind::Or => true,
+            _ => false
+        }
+    }
+
+    pub fn is_shift(&self) -> bool {
+        match *self {
+            BinOpKind::Shl | BinOpKind::Shr => true,
+            _ => false
+        }
+    }
+    pub fn is_comparison(&self) -> bool {
+        use self::BinOpKind::*;
+        match *self {
+            Eq | Lt | Le | Ne | Gt | Ge =>
+            true,
+            And | Or | Add | Sub | Mul | Div | Rem |
+            BitXor | BitAnd | BitOr | Shl | Shr =>
+            false,
+        }
+    }
+    /// Returns `true` if the binary operator takes its arguments by value
+    pub fn is_by_value(&self) -> bool {
+        !self.is_comparison()
+    }
+}
+
+pub type BinOp = Spanned<BinOpKind>;
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug, Copy)]
+pub enum UnOp {
+    /// The `*` operator for dereferencing
+    Deref,
+    /// The `!` operator for logical inversion
+    Not,
+    /// The `-` operator for negation
+    Neg,
+}
+
+impl UnOp {
+    /// Returns `true` if the unary operator takes its argument by value
+    pub fn is_by_value(u: UnOp) -> bool {
+        match u {
+            UnOp::Neg | UnOp::Not => true,
+            _ => false,
+        }
+    }
+
+    pub fn to_string(op: UnOp) -> &'static str {
+        match op {
+            UnOp::Deref => "*",
+            UnOp::Not => "!",
+            UnOp::Neg => "-",
+        }
+    }
+}
+
+/// A statement
+pub type Stmt = Spanned<StmtKind>;
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
+pub enum StmtKind {
+    /// Could be an item or a local (let) binding:
+    Decl(P<Decl>, NodeId),
+
+    /// Expr without trailing semi-colon (must have unit type):
+    Expr(P<Expr>, NodeId),
+
+    /// Expr with trailing semi-colon (may have any type):
+    Semi(P<Expr>, NodeId),
+}
+
+// FIXME (pending discussion of #1697, #2178...): local should really be
+// a refinement on pat.
+/// Local represents a `let` statement, e.g., `let <pat>:<ty> = <expr>;`
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
+pub struct Local {
+    pub pat: P<Pat>,
+    pub ty: Option<P<Ty>>,
+    /// Initializer expression to set the value, if any
+    pub init: Option<P<Expr>>,
+    pub id: NodeId,
+    pub span: Span,
+    pub attrs: ThinAttributes,
+}
+
+impl Local {
+    pub fn attrs(&self) -> &[Attribute] {
+        match self.attrs {
+            Some(ref b) => b,
+            None => &[],
+        }
+    }
+}
+
+pub type Decl = Spanned<DeclKind>;
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
+pub enum DeclKind {
+    /// A local (let) binding:
+    Local(P<Local>),
+    /// An item binding:
+    Item(P<Item>),
+}
+
+impl Decl {
+    pub fn attrs(&self) -> &[Attribute] {
+        match self.node {
+            DeclKind::Local(ref l) => l.attrs(),
+            DeclKind::Item(ref i) => i.attrs(),
+        }
+    }
+}
+
+/// represents one arm of a 'match'
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash,)]
+pub struct Arm {
+    pub attrs: Vec<Attribute>,
+    pub pats: Vec<P<Pat>>,
+    pub guard: Option<P<Expr>>,
+    pub body: P<Expr>,
+}
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash,)]
+pub struct Field {
+    pub ident: SpannedIdent,
+    pub expr: P<Expr>,
+    pub span: Span,
+}
+
+pub type SpannedIdent = Spanned<Ident>;
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Copy)]
+pub enum BlockCheckMode {
+    Default,
+    Unsafe(UnsafeSource),
+}
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Copy)]
+pub enum UnsafeSource {
+    CompilerGenerated,
+    UserProvided,
+}
+
+/// An expression
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash,)]
+pub struct Expr {
+    pub id: NodeId,
+    pub node: ExprKind,
+    pub span: Span,
+}
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash,)]
+pub enum ExprKind {
+  /// An array (`[a, b, c, d]`)
+  Vec(Vec<P<Expr>>),
+  /// A function call
+  ///
+  /// The first field resolves to the function itself,
+  /// and the second field is the list of arguments
+  Call(P<Expr>, Vec<P<Expr>>),
+  /// A tuple (`(a, b, c ,d)`)
+  Tup(Vec<P<Expr>>),
+  /// A binary operation (For example: `a + b`, `a * b`)
+  Binary(BinOp, P<Expr>, P<Expr>),
+  /// A unary operation (For example: `!x`, `*x`)
+  Unary(UnOp, P<Expr>),
+  /// A literal (For example: `1u8`, `"foo"`)
+  Lit(P<Lit>),
+  /// A cast (`foo as f64`)
+  Cast(P<Expr>, P<Ty>),
+  Type(P<Expr>, P<Ty>),
+}
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
+pub struct QSelf {
+    pub ty: P<Ty>,
+    pub position: usize
+}
+
+
+/// A delimited sequence of token trees
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Delimited {
+    /// The type of delimiter
+    pub delim: token::DelimToken,
+    /// The span covering the opening delimiter
+    pub open_span: Span,
+    /// The delimited sequence of token trees
+    pub tts: Vec<TokenTree>,
+    /// The span covering the closing delimiter
+    pub close_span: Span,
+}
+
+impl Delimited {
+    /// Returns the opening delimiter as a token.
+    pub fn open_token(&self) -> token::Token {
+        token::OpenDelim(self.delim)
+    }
+
+    /// Returns the closing delimiter as a token.
+    pub fn close_token(&self) -> token::Token {
+        token::CloseDelim(self.delim)
+    }
+
+    /// Returns the opening delimiter as a token tree.
+    pub fn open_tt(&self) -> TokenTree {
+        TokenTree::Token(self.open_span, self.open_token())
+    }
+
+    /// Returns the closing delimiter as a token tree.
+    pub fn close_tt(&self) -> TokenTree {
+        TokenTree::Token(self.close_span, self.close_token())
+    }
+}
+
+/// A sequence of token trees
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct SequenceRepetition {
+    /// The sequence of token trees
+    pub tts: Vec<TokenTree>,
+    /// The optional separator
+    pub separator: Option<token::Token>,
+    /// Whether the sequence can be repeated zero (*), or one or more times (+)
+    pub op: KleeneOp,
+    /// The number of `MatchNt`s that appear in the sequence (and subsequences)
+    pub num_captures: usize,
+}
+
+/// A Kleene-style [repetition operator](http://en.wikipedia.org/wiki/Kleene_star)
+/// for token sequences.
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Copy)]
+pub enum KleeneOp {
+    ZeroOrMore,
+    OneOrMore,
+}
+
+/// When the main rust parser encounters a syntax-extension invocation, it
+/// parses the arguments to the invocation as a token-tree. This is a very
+/// loose structure, such that all sorts of different AST-fragments can
+/// be passed to syntax extensions using a uniform type.
+///
+/// If the syntax extension is an MBE macro, it will attempt to match its
+/// LHS token tree against the provided token tree, and if it finds a
+/// match, will transcribe the RHS token tree, splicing in any captured
+/// macro_parser::matched_nonterminals into the `SubstNt`s it finds.
+///
+/// The RHS of an MBE macro is the only place `SubstNt`s are substituted.
+/// Nothing special happens to misnamed or misplaced `SubstNt`s.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum TokenTree {
+    /// A single token
+    Token(Span, token::Token),
+    /// A delimited sequence of token trees
+    Delimited(Span, Rc<Delimited>),
+
+    // This only makes sense in MBE macros.
+
+    /// A kleene-style repetition sequence with a span
+    // FIXME(eddyb) #12938 Use DST.
+    Sequence(Span, Rc<SequenceRepetition>),
+}
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug, Copy)]
+pub enum StrStyle {
+    /// A regular string, like `"foo"`
+    Cooked,
+    /// A raw string, like `r##"foo"##`
+    ///
+    /// The uint is the number of `#` symbols used
+    Raw(usize)
+}
+
+/// A literal
+pub type Lit = Spanned<LitKind>;
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug, Copy)]
+pub enum LitIntType {
+    Signed(IntTy),
+    Unsigned(UintTy),
+    Unsuffixed,
+}
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
+pub enum LitKind {
+    /// A string literal (`"foo"`)
+    Str(InternedString, StrStyle),
+    /// A byte string (`b"foo"`)
+    ByteStr(Rc<Vec<u8>>),
+    /// A byte char (`b'f'`)
+    Byte(u8),
+    /// A character literal (`'a'`)
+    Char(char),
+    /// An integer literal (`1u8`)
+    Int(u64, LitIntType),
+    /// A float literal (`1f64` or `1E10f64`)
+    Float(InternedString, FloatTy),
+    /// A float literal without a suffix (`1.0 or 1.0E10`)
+    FloatUnsuffixed(InternedString),
+    /// A boolean literal
+    Bool(bool),
+}
+
+impl LitKind {
+    /// Returns true if this literal is a string and false otherwise.
+    pub fn is_str(&self) -> bool {
+        match *self {
+            LitKind::Str(..) => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Copy)]
@@ -657,6 +987,24 @@ impl StructFieldKind {
     }
 }
 
+/// Fields and Ids of enum variants and structs
+///
+/// For enum variants: `NodeId` represents both an Id of the variant itself (relevant for all
+/// variant kinds) and an Id of the variant's constructor (not relevant for `Struct`-variants).
+/// One shared Id can be successfully used for these two purposes.
+/// Id of the whole enum lives in `Item`.
+///
+/// For structs: `NodeId` represents an Id of the structure's constructor, so it is not actually
+/// used for `Struct`-structs (but still presents). Structures don't have an analogue of "Id of
+/// the variant itself" from enum variants.
+/// Id of the whole struct lives in `Item`.
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
+pub enum VariantData {
+    Struct(Vec<StructField>, NodeId),
+    Tuple(Vec<StructField>, NodeId),
+    Unit(NodeId),
+}
+
 impl VariantData {
     pub fn fields(&self) -> &[StructField] {
         match *self {
@@ -707,287 +1055,4 @@ impl Item {
 pub enum ItemKind {
   /// A type alias, e.g. `type Foo = Bar<u8>`
   Ty(P<Ty>, Generics),
-}
-
-/// Fields and Ids of enum variants and structs
-///
-/// For enum variants: `NodeId` represents both an Id of the variant itself (relevant for all
-/// variant kinds) and an Id of the variant's constructor (not relevant for `Struct`-variants).
-/// One shared Id can be successfully used for these two purposes.
-/// Id of the whole enum lives in `Item`.
-///
-/// For structs: `NodeId` represents an Id of the structure's constructor, so it is not actually
-/// used for `Struct`-structs (but still presents). Structures don't have an analogue of "Id of
-/// the variant itself" from enum variants.
-/// Id of the whole struct lives in `Item`.
-#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
-pub enum VariantData {
-    Struct(Vec<StructField>, NodeId),
-    Tuple(Vec<StructField>, NodeId),
-    Unit(NodeId),
-}
-
-
-#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
-pub struct QSelf {
-    pub ty: P<Ty>,
-    pub position: usize
-}
-
-/// An expression
-#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash,)]
-pub struct Expr {
-    pub id: NodeId,
-    pub node: ExprKind,
-    pub span: Span,
-}
-
-#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash,)]
-pub enum ExprKind {
-  /// An array (`[a, b, c, d]`)
-  Vec(Vec<P<Expr>>),
-  /// A function call
-  ///
-  /// The first field resolves to the function itself,
-  /// and the second field is the list of arguments
-  Call(P<Expr>, Vec<P<Expr>>),
-  /// A tuple (`(a, b, c ,d)`)
-  Tup(Vec<P<Expr>>),
-  /// A binary operation (For example: `a + b`, `a * b`)
-  Binary(BinOp, P<Expr>, P<Expr>),
-  /// A unary operation (For example: `!x`, `*x`)
-  Unary(UnOp, P<Expr>),
-  /// A literal (For example: `1u8`, `"foo"`)
-  Lit(P<Lit>),
-  /// A cast (`foo as f64`)
-  Cast(P<Expr>, P<Ty>),
-  Type(P<Expr>, P<Ty>),
-}
-
-#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug, Copy)]
-pub enum BinOpKind {
-    /// The `+` operator (addition)
-    Add,
-    /// The `-` operator (subtraction)
-    Sub,
-    /// The `*` operator (multiplication)
-    Mul,
-    /// The `/` operator (division)
-    Div,
-    /// The `%` operator (modulus)
-    Rem,
-    /// The `&&` operator (logical and)
-    And,
-    /// The `||` operator (logical or)
-    Or,
-    /// The `^` operator (bitwise xor)
-    BitXor,
-    /// The `&` operator (bitwise and)
-    BitAnd,
-    /// The `|` operator (bitwise or)
-    BitOr,
-    /// The `<<` operator (shift left)
-    Shl,
-    /// The `>>` operator (shift right)
-    Shr,
-    /// The `==` operator (equality)
-    Eq,
-    /// The `<` operator (less than)
-    Lt,
-    /// The `<=` operator (less than or equal to)
-    Le,
-    /// The `!=` operator (not equal to)
-    Ne,
-    /// The `>=` operator (greater than or equal to)
-    Ge,
-    /// The `>` operator (greater than)
-    Gt,
-}
-
-impl BinOpKind {
-    pub fn to_string(&self) -> &'static str {
-        use self::BinOpKind::*;
-        match *self {
-            Add => "+",
-            Sub => "-",
-            Mul => "*",
-            Div => "/",
-            Rem => "%",
-            And => "&&",
-            Or => "||",
-            BitXor => "^",
-            BitAnd => "&",
-            BitOr => "|",
-            Shl => "<<",
-            Shr => ">>",
-            Eq => "==",
-            Lt => "<",
-            Le => "<=",
-            Ne => "!=",
-            Ge => ">=",
-            Gt => ">",
-        }
-    }
-    pub fn lazy(&self) -> bool {
-        match *self {
-            BinOpKind::And | BinOpKind::Or => true,
-            _ => false
-        }
-    }
-
-    pub fn is_shift(&self) -> bool {
-        match *self {
-            BinOpKind::Shl | BinOpKind::Shr => true,
-            _ => false
-        }
-    }
-    pub fn is_comparison(&self) -> bool {
-        use self::BinOpKind::*;
-        match *self {
-            Eq | Lt | Le | Ne | Gt | Ge =>
-            true,
-            And | Or | Add | Sub | Mul | Div | Rem |
-            BitXor | BitAnd | BitOr | Shl | Shr =>
-            false,
-        }
-    }
-    /// Returns `true` if the binary operator takes its arguments by value
-    pub fn is_by_value(&self) -> bool {
-        !self.is_comparison()
-    }
-}
-
-pub type BinOp = Spanned<BinOpKind>;
-
-#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug, Copy)]
-pub enum UnOp {
-    /// The `*` operator for dereferencing
-    Deref,
-    /// The `!` operator for logical inversion
-    Not,
-    /// The `-` operator for negation
-    Neg,
-}
-
-impl UnOp {
-    /// Returns `true` if the unary operator takes its argument by value
-    pub fn is_by_value(u: UnOp) -> bool {
-        match u {
-            UnOp::Neg | UnOp::Not => true,
-            _ => false,
-        }
-    }
-
-    pub fn to_string(op: UnOp) -> &'static str {
-        match op {
-            UnOp::Deref => "*",
-            UnOp::Not => "!",
-            UnOp::Neg => "-",
-        }
-    }
-}
-
-#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
-pub enum StmtKind {
-    /// Could be an item or a local (let) binding:
-    Decl(P<Decl>, NodeId),
-
-    /// Expr without trailing semi-colon (must have unit type):
-    Expr(P<Expr>, NodeId),
-
-    /// Expr with trailing semi-colon (may have any type):
-    Semi(P<Expr>, NodeId),
-}
-
-// FIXME (pending discussion of #1697, #2178...): local should really be
-// a refinement on pat.
-/// Local represents a `let` statement, e.g., `let <pat>:<ty> = <expr>;`
-#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
-pub struct Local {
-    pub pat: P<Pat>,
-    pub ty: Option<P<Ty>>,
-    /// Initializer expression to set the value, if any
-    pub init: Option<P<Expr>>,
-    pub id: NodeId,
-    pub span: Span,
-    pub attrs: ThinAttributes,
-}
-
-impl Local {
-    pub fn attrs(&self) -> &[Attribute] {
-        match self.attrs {
-            Some(ref b) => b,
-            None => &[],
-        }
-    }
-}
-
-pub type Decl = Spanned<DeclKind>;
-
-#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
-pub enum DeclKind {
-    /// A local (let) binding:
-    Local(P<Local>),
-    /// An item binding:
-    Item(P<Item>),
-}
-
-impl Decl {
-    pub fn attrs(&self) -> &[Attribute] {
-        match self.node {
-            DeclKind::Local(ref l) => l.attrs(),
-            DeclKind::Item(ref i) => i.attrs(),
-        }
-    }
-}
-
-
-#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug, Copy)]
-pub enum StrStyle {
-    /// A regular string, like `"foo"`
-    Cooked,
-    /// A raw string, like `r##"foo"##`
-    ///
-    /// The uint is the number of `#` symbols used
-    Raw(usize)
-}
-
-/// A literal
-pub type Lit = Spanned<LitKind>;
-
-#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug, Copy)]
-pub enum LitIntType {
-    Signed(IntTy),
-    Unsigned(UintTy),
-    Unsuffixed,
-}
-
-#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
-pub enum LitKind {
-    /// A string literal (`"foo"`)
-    Str(InternedString, StrStyle),
-    /// A byte string (`b"foo"`)
-    ByteStr(Rc<Vec<u8>>),
-    /// A byte char (`b'f'`)
-    Byte(u8),
-    /// A character literal (`'a'`)
-    Char(char),
-    /// An integer literal (`1u8`)
-    Int(u64, LitIntType),
-    /// A float literal (`1f64` or `1E10f64`)
-    Float(InternedString, FloatTy),
-    /// A float literal without a suffix (`1.0 or 1.0E10`)
-    FloatUnsuffixed(InternedString),
-    /// A boolean literal
-    Bool(bool),
-}
-
-impl LitKind {
-    /// Returns true if this literal is a string and false otherwise.
-    pub fn is_str(&self) -> bool {
-        match *self {
-            LitKind::Str(..) => true,
-            _ => false,
-        }
-    }
 }
