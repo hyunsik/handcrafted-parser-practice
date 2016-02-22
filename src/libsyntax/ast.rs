@@ -301,6 +301,12 @@ pub enum Pat_ {
 }
 
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug, Copy)]
+pub enum Mutability {
+    Mutable,
+    Immutable,
+}
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug, Copy)]
 pub enum BinOpKind {
     /// The `+` operator (addition)
     Add,
@@ -538,14 +544,106 @@ pub enum ExprKind {
   /// A cast (`foo as f64`)
   Cast(P<Expr>, P<Ty>),
   Type(P<Expr>, P<Ty>),
+  /// An `if` block, with an optional else block
+  ///
+  /// `if expr { block } else { expr }`
+  If(P<Expr>, P<Block>, Option<P<Expr>>),
+  /// A while loop, with an optional label
+  ///
+  /// `'label: while expr { block }`
+  While(P<Expr>, P<Block>, Option<Ident>),
+  /// A for loop, with an optional label
+  ///
+  /// `'label: for pat in expr { block }`
+  ///
+  /// This is desugared to a combination of `loop` and `match` expressions.
+  ForLoop(P<Pat>, P<Expr>, P<Block>, Option<Ident>),
+  /// Conditionless loop (can be exited with break, continue, or return)
+  ///
+  /// `'label: loop { block }`
+  Loop(P<Block>, Option<Ident>),
+  /// A `match` block.
+  Match(P<Expr>, Vec<Arm>),
+  /// A closure (for example, `move |a, b, c| {a + b + c}`)
+  Closure(CaptureBy, P<FnDecl>, P<Block>),
+  /// A block (`{ ... }`)
+  Block(P<Block>),
+
+  /// An assignment (`a = foo()`)
+  Assign(P<Expr>, P<Expr>),
+  /// An assignment with an operator
+  ///
+  /// For example, `a += 1`.
+  AssignOp(BinOp, P<Expr>, P<Expr>),
+  /// Access of a named struct field (`obj.foo`)
+  Field(P<Expr>, SpannedIdent),
+  /// Access of an unnamed field of a struct or tuple-struct
+  ///
+  /// For example, `foo.0`.
+  TupField(P<Expr>, Spanned<usize>),
+  /// An indexing operation (`foo[2]`)
+  Index(P<Expr>, P<Expr>),
+  /// A range (`1..2`, `1..`, or `..2`)
+  Range(Option<P<Expr>>, Option<P<Expr>>),
+
+  /// Variable reference, possibly containing `::` and/or type
+  /// parameters, e.g. foo::bar::<baz>.
+  ///
+  /// Optionally "qualified",
+  /// e.g. `<Vec<T> as SomeTrait>::SomeType`.
+  Path(Option<QSelf>, Path),
+
+  /// A referencing operation (`&a` or `&mut a`)
+  AddrOf(Mutability, P<Expr>),
+  /// A `break`, with an optional label to break
+  Break(Option<SpannedIdent>),
+  /// A `continue`, with an optional label
+  Again(Option<SpannedIdent>),
+  /// A `return`, with an optional value to be returned
+  Ret(Option<P<Expr>>),
+
+  /// A struct literal expression.
+  ///
+  /// For example, `Foo {x: 1, y: 2}`, or
+  /// `Foo {x: 1, .. base}`, where `base` is the `Option<Expr>`.
+  Struct(Path, Vec<Field>, Option<P<Expr>>),
+
+  /// An array literal constructed from one repeated element.
+  ///
+  /// For example, `[1u8; 5]`. The first expression is the element
+  /// to be repeated; the second is the number of times to repeat it.
+  Repeat(P<Expr>, P<Expr>),
+
+  /// No-op: used solely so we can pretty-print faithfully
+  Paren(P<Expr>),
 }
 
+/// The explicit Self type in a "qualified path". The actual
+/// path, including the trait and the associated item, is stored
+/// separately. `position` represents the index of the associated
+/// item qualified with this Self type.
+///
+/// ```ignore
+/// <Vec<T> as a::b::Trait>::AssociatedItem
+///  ^~~~~     ~~~~~~~~~~~~~~^
+///  ty        position = 3
+///
+/// <Vec<T>>::AssociatedItem
+///  ^~~~~    ^
+///  ty       position = 0
+/// ```
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
 pub struct QSelf {
     pub ty: P<Ty>,
     pub position: usize
 }
 
+/// A capture clause
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Copy)]
+pub enum CaptureBy {
+    Value,
+    Ref,
+}
 
 /// A delimited sequence of token trees
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
