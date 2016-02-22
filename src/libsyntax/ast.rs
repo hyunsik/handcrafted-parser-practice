@@ -1,9 +1,12 @@
+pub use self::StructFieldKind::*;
+
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 use rustc_serialize::{Encodable, Decodable, Encoder, Decoder};
 
 use abi::Abi;
+use attr::ThinAttributes;
 use codemap::{Span, Spanned};
 use parse::token::InternedString;
 use parse::token;
@@ -231,6 +234,120 @@ pub const CRATE_NODE_ID: NodeId = 0;
 /// small, positive ids.
 pub const DUMMY_NODE_ID: NodeId = !0;
 
+pub trait NodeIdAssigner {
+    fn next_node_id(&self) -> NodeId;
+    fn peek_node_id(&self) -> NodeId;
+}
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
+pub struct TyParam {
+    pub ident: Ident,
+    pub id: NodeId,
+    pub default: Option<P<Ty>>,
+    pub span: Span
+}
+
+/// Represents lifetimes and type parameters attached to a declaration
+/// of a function, enum, trait, etc.
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
+pub struct Generics {
+    pub ty_params: P<[TyParam]>,
+    pub where_clause: WhereClause,
+}
+
+impl Generics {
+    pub fn is_type_parameterized(&self) -> bool {
+        !self.ty_params.is_empty()
+    }
+    pub fn is_parameterized(&self) -> bool {
+        self.is_type_parameterized()
+    }
+}
+
+impl Default for Generics {
+    fn default() ->  Generics {
+        Generics {
+            ty_params: P::empty(),
+            where_clause: WhereClause {
+                id: DUMMY_NODE_ID,
+                predicates: Vec::new(),
+            }
+        }
+    }
+}
+
+/// A `where` clause in a definition
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
+pub struct WhereClause {
+    pub id: NodeId,
+    pub predicates: Vec<WherePredicate>,
+}
+
+/// A single predicate in a `where` clause
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
+pub enum WherePredicate {
+    /// A type binding, e.g. `for<'c> Foo: Send+Clone+'c`
+    BoundPredicate(WhereBoundPredicate),
+}
+
+/// A type bound, e.g. `for<'c> Foo: Send+Clone+'c`
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
+pub struct WhereBoundPredicate {
+    pub span: Span,
+    /// The type being bounded
+    pub bounded_ty: P<Ty>,
+}
+
+
+pub type MetaItem = Spanned<MetaItemKind>;
+
+#[derive(Clone, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
+pub enum MetaItemKind {
+    Word(InternedString),
+    List(InternedString, Vec<P<MetaItem>>),
+    NameValue(InternedString, Lit),
+}
+
+// can't be derived because the MetaItemKind::List requires an unordered comparison
+impl PartialEq for MetaItemKind {
+    fn eq(&self, other: &MetaItemKind) -> bool {
+        use self::MetaItemKind::*;
+        match *self {
+            Word(ref ns) => match *other {
+                Word(ref no) => (*ns) == (*no),
+                _ => false
+            },
+            NameValue(ref ns, ref vs) => match *other {
+                NameValue(ref no, ref vo) => {
+                    (*ns) == (*no) && vs.node == vo.node
+                }
+                _ => false
+            },
+            List(ref ns, ref miss) => match *other {
+                List(ref no, ref miso) => {
+                    ns == no &&
+                        miss.iter().all(|mi| miso.iter().any(|x| x.node == mi.node))
+                }
+                _ => false
+            }
+        }
+    }
+}
+
+pub struct Block;
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
+pub struct Pat {
+    pub id: NodeId,
+    pub node: Pat_,
+    pub span: Span,
+}
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
+pub enum Pat_ {
+  /// Represents a wildcard pattern (`_`)
+  PatWild,
+}
 
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Copy)]
 pub enum IntTy {
@@ -460,6 +577,157 @@ impl FunctionRetTy {
     }
 }
 
+/// Meta-data associated with an item
+pub type Attribute = Spanned<Attribute_>;
+
+/// Distinguishes between Attributes that decorate items and Attributes that
+/// are contained as statements within items. These two cases need to be
+/// distinguished for pretty-printing.
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Copy)]
+pub enum AttrStyle {
+    Outer,
+    Inner,
+}
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Copy)]
+pub struct AttrId(pub usize);
+
+/// Doc-comments are promoted to attributes that have is_sugared_doc = true
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
+pub struct Attribute_ {
+    pub id: AttrId,
+    pub style: AttrStyle,
+    pub value: P<MetaItem>,
+    pub is_sugared_doc: bool,
+}
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug, Copy)]
+pub enum Visibility {
+    Public,
+    Inherited,
+}
+
+impl Visibility {
+    pub fn inherit_from(&self, parent_visibility: Visibility) -> Visibility {
+        match *self {
+            Visibility::Inherited => parent_visibility,
+            Visibility::Public => *self
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
+pub struct StructField_ {
+    pub kind: StructFieldKind,
+    pub id: NodeId,
+    pub ty: P<Ty>,
+    pub attrs: Vec<Attribute>,
+}
+
+impl StructField_ {
+    pub fn ident(&self) -> Option<Ident> {
+        match self.kind {
+            NamedField(ref ident, _) => Some(ident.clone()),
+            UnnamedField(_) => None
+        }
+    }
+}
+
+pub type StructField = Spanned<StructField_>;
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Copy)]
+pub enum StructFieldKind {
+    NamedField(Ident, Visibility),
+    /// Element of a tuple-like struct
+    UnnamedField(Visibility),
+}
+
+impl StructFieldKind {
+    pub fn is_unnamed(&self) -> bool {
+        match *self {
+            UnnamedField(..) => true,
+            NamedField(..) => false,
+        }
+    }
+
+    pub fn visibility(&self) -> Visibility {
+        match *self {
+            NamedField(_, vis) | UnnamedField(vis) => vis
+        }
+    }
+}
+
+impl VariantData {
+    pub fn fields(&self) -> &[StructField] {
+        match *self {
+            VariantData::Struct(ref fields, _) | VariantData::Tuple(ref fields, _) => fields,
+            _ => &[],
+        }
+    }
+    pub fn id(&self) -> NodeId {
+        match *self {
+            VariantData::Struct(_, id) | VariantData::Tuple(_, id) | VariantData::Unit(id) => id
+        }
+    }
+    pub fn is_struct(&self) -> bool {
+        if let VariantData::Struct(..) = *self { true } else { false }
+    }
+    pub fn is_tuple(&self) -> bool {
+        if let VariantData::Tuple(..) = *self { true } else { false }
+    }
+    pub fn is_unit(&self) -> bool {
+        if let VariantData::Unit(..) = *self { true } else { false }
+    }
+}
+
+/*
+  FIXME (#3300): Should allow items to be anonymous. Right now
+  we just use dummy names for anon items.
+ */
+/// An item
+///
+/// The name might be a dummy name in case of anonymous items
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
+pub struct Item {
+    pub ident: Ident,
+    pub attrs: Vec<Attribute>,
+    pub id: NodeId,
+    pub node: ItemKind,
+    pub vis: Visibility,
+    pub span: Span,
+}
+
+impl Item {
+    pub fn attrs(&self) -> &[Attribute] {
+        &self.attrs
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
+pub enum ItemKind {
+  /// A type alias, e.g. `type Foo = Bar<u8>`
+  Ty(P<Ty>, Generics),
+}
+
+/// Fields and Ids of enum variants and structs
+///
+/// For enum variants: `NodeId` represents both an Id of the variant itself (relevant for all
+/// variant kinds) and an Id of the variant's constructor (not relevant for `Struct`-variants).
+/// One shared Id can be successfully used for these two purposes.
+/// Id of the whole enum lives in `Item`.
+///
+/// For structs: `NodeId` represents an Id of the structure's constructor, so it is not actually
+/// used for `Struct`-structs (but still presents). Structures don't have an analogue of "Id of
+/// the variant itself" from enum variants.
+/// Id of the whole struct lives in `Item`.
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
+pub enum VariantData {
+    Struct(Vec<StructField>, NodeId),
+    Tuple(Vec<StructField>, NodeId),
+    Unit(NodeId),
+}
+
+
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
 pub struct QSelf {
     pub ty: P<Ty>,
@@ -618,6 +886,61 @@ impl UnOp {
         }
     }
 }
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
+pub enum StmtKind {
+    /// Could be an item or a local (let) binding:
+    Decl(P<Decl>, NodeId),
+
+    /// Expr without trailing semi-colon (must have unit type):
+    Expr(P<Expr>, NodeId),
+
+    /// Expr with trailing semi-colon (may have any type):
+    Semi(P<Expr>, NodeId),
+}
+
+// FIXME (pending discussion of #1697, #2178...): local should really be
+// a refinement on pat.
+/// Local represents a `let` statement, e.g., `let <pat>:<ty> = <expr>;`
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
+pub struct Local {
+    pub pat: P<Pat>,
+    pub ty: Option<P<Ty>>,
+    /// Initializer expression to set the value, if any
+    pub init: Option<P<Expr>>,
+    pub id: NodeId,
+    pub span: Span,
+    pub attrs: ThinAttributes,
+}
+
+impl Local {
+    pub fn attrs(&self) -> &[Attribute] {
+        match self.attrs {
+            Some(ref b) => b,
+            None => &[],
+        }
+    }
+}
+
+pub type Decl = Spanned<DeclKind>;
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
+pub enum DeclKind {
+    /// A local (let) binding:
+    Local(P<Local>),
+    /// An item binding:
+    Item(P<Item>),
+}
+
+impl Decl {
+    pub fn attrs(&self) -> &[Attribute] {
+        match self.node {
+            DeclKind::Local(ref l) => l.attrs(),
+            DeclKind::Item(ref i) => i.attrs(),
+        }
+    }
+}
+
 
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug, Copy)]
 pub enum StrStyle {

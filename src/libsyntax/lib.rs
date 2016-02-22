@@ -33,6 +33,7 @@ macro_rules! panictry {
 
 pub mod abi;
 pub mod ast;
+pub mod attr;
 pub mod codemap;
 pub mod errors;
 pub mod parse;
