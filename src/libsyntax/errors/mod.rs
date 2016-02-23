@@ -343,13 +343,13 @@ impl Handler {
         self.bump_err_count();
     }
 
+    pub fn span_warn<S: Into<MultiSpan>>(&self, sp: S, msg: &str) {
+        self.emit(Some(&sp.into()), msg, Warning);
+    }
+
     pub fn span_bug<S: Into<MultiSpan>>(&self, sp: S, msg: &str) -> ! {
         self.emit(Some(&sp.into()), msg, Bug);
         panic!(ExplicitBug);
-    }
-
-    pub fn bump_err_count(&self) {
-        self.err_count.set(self.err_count.get() + 1);
     }
 
     pub fn fatal(&self, msg: &str) -> FatalError {
@@ -374,6 +374,42 @@ impl Handler {
     pub fn bug(&self, msg: &str) -> ! {
         self.emit.borrow_mut().emit(None, msg, None, Bug);
         panic!(ExplicitBug);
+    }
+
+    pub fn bump_err_count(&self) {
+        self.err_count.set(self.err_count.get() + 1);
+    }
+
+    pub fn err_count(&self) -> usize {
+        self.err_count.get()
+    }
+
+    pub fn has_errors(&self) -> bool {
+        self.err_count.get() > 0
+    }
+
+    pub fn abort_if_errors(&self) {
+        let s;
+        match self.err_count.get() {
+            0 => {
+                let delayed_bug = self.delayed_span_bug.borrow();
+                match *delayed_bug {
+                    Some((ref span, ref errmsg)) => {
+                        self.span_bug(span.clone(), errmsg);
+                    },
+                    _ => {}
+                }
+
+                return;
+            }
+            1 => s = "aborting due to previous error".to_string(),
+            _  => {
+                s = format!("aborting due to {} previous errors",
+                            self.err_count.get());
+            }
+        }
+
+        panic!(self.fatal(&s));
     }
 
     pub fn emit(&self,

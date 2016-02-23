@@ -991,6 +991,27 @@ pub struct FnDecl {
     pub variadic: bool
 }
 
+#[derive(Copy, Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash,)]
+pub enum Unsafety {
+    Unsafe,
+    Normal,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash,)]
+pub enum Constness {
+    Const,
+    NotConst,
+}
+
+impl fmt::Display for Unsafety {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(match *self {
+            Unsafety::Normal => "normal",
+            Unsafety::Unsafe => "unsafe",
+        }, f)
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
 pub enum FunctionRetTy {
     /// Functions with return type `!`that always

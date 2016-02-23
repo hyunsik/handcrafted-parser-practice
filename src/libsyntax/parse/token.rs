@@ -9,6 +9,7 @@ use std::ops::Deref;
 use std::rc::Rc;
 use rustc_serialize::{Encodable, Decodable, Encoder, Decoder};
 
+use ast::BinOpKind;
 use ast;
 use util::interner::{self, StrInterner, RcStr};
 
@@ -83,7 +84,7 @@ pub enum Token {
     Comma,
     Semi,
     Colon,
-    ColonColon,
+    ModSep,
     RArrow,
     LArrow,
     FatArrow,
@@ -140,7 +141,7 @@ impl Token {
             OrOr                        => true, // in lambda syntax
             AndAnd                      => true, // double borrow
             DotDot                      => true, // range notation
-            ColonColon                  => true,
+            ModSep                      => true,
             Pound                       => true, // for expression attributes
             _                           => false,
         }
@@ -162,6 +163,12 @@ impl Token {
         }
     }
 
+    /// Returns `true` if the token is an interpolated path.
+    pub fn is_path(&self) -> bool {
+      // TODO - how can I handle it?
+      false
+    }
+
     /// Returns `true` if the token is a path that is not followed by a `::`
     /// token.
     #[allow(non_upper_case_globals)]
@@ -172,12 +179,104 @@ impl Token {
         }
     }
 
+    /// Maps a token to its corresponding binary operator.
+    pub fn to_binop(&self) -> Option<BinOpKind> {
+        match *self {
+            BinOp(Star)     => Some(BinOpKind::Mul),
+            BinOp(Slash)    => Some(BinOpKind::Div),
+            BinOp(Percent)  => Some(BinOpKind::Rem),
+            BinOp(Plus)     => Some(BinOpKind::Add),
+            BinOp(Minus)    => Some(BinOpKind::Sub),
+            BinOp(Shl)      => Some(BinOpKind::Shl),
+            BinOp(Shr)      => Some(BinOpKind::Shr),
+            BinOp(And)      => Some(BinOpKind::BitAnd),
+            BinOp(Caret)    => Some(BinOpKind::BitXor),
+            BinOp(Or)       => Some(BinOpKind::BitOr),
+            Lt              => Some(BinOpKind::Lt),
+            Le              => Some(BinOpKind::Le),
+            Ge              => Some(BinOpKind::Ge),
+            Gt              => Some(BinOpKind::Gt),
+            EqEq            => Some(BinOpKind::Eq),
+            Ne              => Some(BinOpKind::Ne),
+            AndAnd          => Some(BinOpKind::And),
+            OrOr            => Some(BinOpKind::Or),
+            _               => None,
+        }
+    }
+
     /// Returns `true` if the token is a given keyword, `kw`.
     #[allow(non_upper_case_globals)]
     pub fn is_keyword(&self, kw: keywords::Keyword) -> bool {
         match *self {
             Ident(sid, Plain) => kw.to_name() == sid.name,
             _                      => false,
+        }
+    }
+
+    pub fn is_keyword_allow_following_colon(&self, kw: keywords::Keyword) -> bool {
+        match *self {
+            Ident(sid, _) => { kw.to_name() == sid.name }
+            _ => { false }
+        }
+    }
+
+    /// Returns `true` if the token is either a special identifier, or a strict
+    /// or reserved keyword.
+    #[allow(non_upper_case_globals)]
+    pub fn is_any_keyword(&self) -> bool {
+        match *self {
+            Ident(sid, Plain) => {
+                let n = sid.name;
+
+                   n == SELF_KEYWORD_NAME
+                || n == STATIC_KEYWORD_NAME
+                || n == SUPER_KEYWORD_NAME
+                || n == SELF_TYPE_KEYWORD_NAME
+                || STRICT_KEYWORD_START <= n
+                && n <= RESERVED_KEYWORD_FINAL
+            },
+            _ => false
+        }
+    }
+
+    /// Returns `true` if the token may not appear as an identifier.
+    #[allow(non_upper_case_globals)]
+    pub fn is_strict_keyword(&self) -> bool {
+        match *self {
+            Ident(sid, Plain) => {
+                let n = sid.name;
+
+                   n == SELF_KEYWORD_NAME
+                || n == STATIC_KEYWORD_NAME
+                || n == SUPER_KEYWORD_NAME
+                || n == SELF_TYPE_KEYWORD_NAME
+                || STRICT_KEYWORD_START <= n
+                && n <= STRICT_KEYWORD_FINAL
+            },
+            Ident(sid, ModName) => {
+                let n = sid.name;
+
+                   n != SELF_KEYWORD_NAME
+                && n != SUPER_KEYWORD_NAME
+                && STRICT_KEYWORD_START <= n
+                && n <= STRICT_KEYWORD_FINAL
+            }
+            _ => false,
+        }
+    }
+
+    /// Returns `true` if the token is a keyword that has been reserved for
+    /// possible future use.
+    #[allow(non_upper_case_globals)]
+    pub fn is_reserved_keyword(&self) -> bool {
+        match *self {
+            Ident(sid, Plain) => {
+                let n = sid.name;
+
+                   RESERVED_KEYWORD_START <= n
+                && n <= RESERVED_KEYWORD_FINAL
+            },
+            _ => false,
         }
     }
 }
@@ -208,7 +307,7 @@ impl fmt::Display for Token {
       Token::Comma         => write!(f, "Comma"),
       Token::Semi          => write!(f, "Semi"),
       Token::Colon         => write!(f, "Colon"),
-      Token::ColonColon    => write!(f, "ColonColon"),
+      Token::ModSep        => write!(f, "ModSep"),
       Token::RArrow        => write!(f, "RArrow"),
       Token::LArrow        => write!(f, "LArrow"),
       Token::FatArrow      => write!(f, "FatArrow"),
@@ -386,6 +485,7 @@ declare_special_idents_and_keywords! {
         (34,                         True,       "true");
         (35,                         Trait,      "trait");
         (36,                         Type,       "type");
+        (37,                         Unsafe,     "unsafe");
         (38,                         Use,        "use");
         (39,                         While,      "while");
         (40,                         Continue,   "continue");
@@ -393,6 +493,7 @@ declare_special_idents_and_keywords! {
         (43,                         Where,      "where");
         'reserved:
         (44,                         Virtual,    "select");
+        (52,                         Typeof,     "typeof");
         (55,                         Do,         "do");
     }
 }

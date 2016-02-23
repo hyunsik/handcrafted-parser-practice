@@ -44,7 +44,7 @@ pub fn token_to_string(tok: &Token) -> String {
         token::Comma                => ",".to_string(),
         token::Semi                 => ";".to_string(),
         token::Colon                => ":".to_string(),
-        token::ColonColon           => "::".to_string(),
+        token::ModSep               => "::".to_string(),
         token::RArrow               => "->".to_string(),
         token::LArrow               => "<-".to_string(),
         token::FatArrow             => "=>".to_string(),
