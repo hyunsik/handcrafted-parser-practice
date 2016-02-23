@@ -9,13 +9,15 @@ use ast::Unsafety;
 use ast::{Mod, Arg, Arm, Attribute};
 use ast::Block;
 use ast::{BlockCheckMode, CaptureBy};
-use ast::{Constness, Crate};
+use ast::{Constness, Crate, CrateConfig};
 use ast::{Decl, DeclKind};
+use ast::{Expr};
 use ast::{FnDecl, FunctionRetTy};
 use ast::{Ident, Item, ItemKind};
 use ast::{Lit, LitKind, UintTy};
 use ast::Local;
 use ast::{Delimited, SequenceRepetition, TokenTree};
+use ast::{Stmt};
 use ast::{Ty, TyKind};
 use ast::{Visibility, WhereClause};
 use ast;
@@ -50,7 +52,7 @@ pub struct Parser<'a> {
     pub span: Span,
     /// the span of the prior token:
     pub last_span: Span,
-
+    pub cfg: CrateConfig,
     /// the previous token or None (only stashed sometimes).
     pub last_token: Option<Box<token::Token>>,
     last_token_interpolated: bool,
@@ -110,6 +112,7 @@ fn maybe_append(mut lhs: Vec<Attribute>, rhs: Option<Vec<Attribute>>)
 
 impl<'a> Parser<'a> {
     pub fn new(sess: &'a ParseSess,
+               cfg: ast::CrateConfig,
                mut rdr: Box<Reader+'a>)
                -> Parser<'a>
     {
@@ -124,6 +127,7 @@ impl<'a> Parser<'a> {
             reader: rdr,
             interner: token::get_ident_interner(),
             sess: sess,
+            cfg: cfg,
             token: tok0.tok,
             span: span,
             last_span: span,
@@ -619,6 +623,21 @@ impl<'a> Parser<'a> {
         Ok(tts)
     }
 
+    /// Parse an expression
+    pub fn parse_expr(&mut self) -> PResult<'a, P<Expr>> {
+        unimplemented!()
+    }
+
+    /// Parse a statement. may include decl.
+    pub fn parse_stmt(&mut self) -> PResult<'a, Option<Stmt>> {
+        unimplemented!()
+    }
+
+    /// Parse a block. No inner attrs are allowed.
+    pub fn parse_block(&mut self) -> PResult<'a, P<Block>> {
+      unimplemented!()
+    }
+
     /// Parse a set of optional generic type parameter declarations. Where
     /// clauses are not parsed here, and must be added later via
     /// `parse_where_clause()`.
@@ -742,6 +761,10 @@ impl<'a> Parser<'a> {
 
     /// Given a termination token, parse all of the items in a module
     fn parse_mod_items(&mut self, term: &token::Token, inner_lo: BytePos) -> PResult<'a, Mod> {
+      unimplemented!()
+    }
+
+    pub fn parse_crate_mod(&mut self) -> PResult<'a, Crate> {
       unimplemented!()
     }
 }

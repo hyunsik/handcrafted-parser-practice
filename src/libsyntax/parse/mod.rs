@@ -2,6 +2,7 @@ use ast;
 use codemap::{self, Span, CodeMap, FileMap};
 use errors::{ColorConfig, Handler, DiagnosticBuilder};
 use parse::parser::Parser;
+use ptr::P;
 
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
@@ -9,6 +10,7 @@ use std::rc::Rc;
 
 pub type PResult<'a, T> = Result<T, DiagnosticBuilder<'a>>;
 
+pub mod attr;
 #[macro_use]
 pub mod parser;
 
@@ -47,22 +49,138 @@ impl ParseSess {
     }
 }
 
-// Create a new parser, handling errors as appropriate
+// a bunch of utility functions of the form parse_<thing>_from_<source>
+// where <thing> includes crate, expr, item, stmt, tts, and one that
+// uses a HOF to parse anything, and <source> includes file and
+// source_str.
+
+pub fn parse_crate_from_file(
+    input: &Path,
+    cfg: ast::CrateConfig,
+    sess: &ParseSess
+) -> ast::Crate {
+    let mut parser = new_parser_from_file(sess, cfg, input);
+    abort_if_errors(parser.parse_crate_mod(), &parser)
+}
+
+pub fn parse_crate_attrs_from_file(
+    input: &Path,
+    cfg: ast::CrateConfig,
+    sess: &ParseSess
+) -> Vec<ast::Attribute> {
+    let mut parser = new_parser_from_file(sess, cfg, input);
+    abort_if_errors(parser.parse_inner_attributes(), &parser)
+}
+
+pub fn parse_crate_from_source_str(name: String,
+                                   source: String,
+                                   cfg: ast::CrateConfig,
+                                   sess: &ParseSess)
+                                   -> ast::Crate {
+    let mut p = new_parser_from_source_str(sess,
+                                           cfg,
+                                           name,
+                                           source);
+    panictry!(p.parse_crate_mod())
+}
+
+pub fn parse_crate_attrs_from_source_str(name: String,
+                                         source: String,
+                                         cfg: ast::CrateConfig,
+                                         sess: &ParseSess)
+                                         -> Vec<ast::Attribute> {
+    let mut p = new_parser_from_source_str(sess,
+                                           cfg,
+                                           name,
+                                           source);
+    panictry!(p.parse_inner_attributes())
+}
+
+pub fn parse_expr_from_source_str(name: String,
+                                  source: String,
+                                  cfg: ast::CrateConfig,
+                                  sess: &ParseSess)
+                                  -> P<ast::Expr> {
+    let mut p = new_parser_from_source_str(sess, cfg, name, source);
+    panictry!(p.parse_expr())
+}
+
+pub fn parse_item_from_source_str(name: String,
+                                  source: String,
+                                  cfg: ast::CrateConfig,
+                                  sess: &ParseSess)
+                                  -> Option<P<ast::Item>> {
+    let mut p = new_parser_from_source_str(sess, cfg, name, source);
+    panictry!(p.parse_item())
+}
+
+pub fn parse_meta_from_source_str(name: String,
+                                  source: String,
+                                  cfg: ast::CrateConfig,
+                                  sess: &ParseSess)
+                                  -> P<ast::MetaItem> {
+    let mut p = new_parser_from_source_str(sess, cfg, name, source);
+    panictry!(p.parse_meta_item())
+}
+
+pub fn parse_stmt_from_source_str(name: String,
+                                  source: String,
+                                  cfg: ast::CrateConfig,
+                                  sess: &ParseSess)
+                                  -> Option<ast::Stmt> {
+    let mut p = new_parser_from_source_str(
+        sess,
+        cfg,
+        name,
+        source
+    );
+    panictry!(p.parse_stmt())
+}
+
+// Warning: This parses with quote_depth > 0, which is not the default.
+pub fn parse_tts_from_source_str(name: String,
+                                 source: String,
+                                 cfg: ast::CrateConfig,
+                                 sess: &ParseSess)
+                                 -> Vec<ast::TokenTree> {
+    let mut p = new_parser_from_source_str(
+        sess,
+        cfg,
+        name,
+        source
+    );
+    p.quote_depth += 1;
+    // right now this is re-creating the token trees from ... token trees.
+    panictry!(p.parse_all_token_trees())
+}
+
+// Create a new parser from a source string
+pub fn new_parser_from_source_str<'a>(sess: &'a ParseSess,
+                                      cfg: ast::CrateConfig,
+                                      name: String,
+                                      source: String)
+                                      -> Parser<'a> {
+    filemap_to_parser(sess, sess.codemap().new_filemap(name, source), cfg)
+}
+
+/// Create a new parser, handling errors as appropriate
 /// if the file doesn't exist
 pub fn new_parser_from_file<'a>(sess: &'a ParseSess,
+                                cfg: ast::CrateConfig,
                                 path: &Path) -> Parser<'a> {
-    filemap_to_parser(sess, file_to_filemap(sess, path, None))
+    filemap_to_parser(sess, file_to_filemap(sess, path, None), cfg)
 }
 
 /// Given a session, a crate config, a path, and a span, add
 /// the file at the given path to the codemap, and return a parser.
 /// On an error, use the given span as the source of the problem.
 pub fn new_sub_parser_from_file<'a>(sess: &'a ParseSess,
+                                    cfg: ast::CrateConfig,
                                     path: &Path,
                                     owns_directory: bool,
                                     module_name: Option<String>,
                                     sp: Span) -> Parser<'a> {
-    let mut p = filemap_to_parser(sess, file_to_filemap(sess, path, Some(sp)));
+    let mut p = filemap_to_parser(sess, file_to_filemap(sess, path, Some(sp)), cfg);
     p.owns_directory = owns_directory;
     p.root_module_name = module_name;
     p
@@ -70,9 +188,10 @@ pub fn new_sub_parser_from_file<'a>(sess: &'a ParseSess,
 
 /// Given a filemap and config, return a parser
 pub fn filemap_to_parser<'a>(sess: &'a ParseSess,
-                             filemap: Rc<FileMap>) -> Parser<'a> {
+                             filemap: Rc<FileMap>,
+                             cfg: ast::CrateConfig) -> Parser<'a> {
     let end_pos = filemap.end_pos;
-    let mut parser = tts_to_parser(sess, filemap_to_tts(sess, filemap));
+    let mut parser = tts_to_parser(sess, filemap_to_tts(sess, filemap), cfg);
 
     if parser.token == token::Eof && parser.span == codemap::DUMMY_SP {
         parser.span = codemap::mk_sp(end_pos, end_pos);
@@ -84,9 +203,11 @@ pub fn filemap_to_parser<'a>(sess: &'a ParseSess,
 // must preserve old name for now, because quote! from the *existing*
 // compiler expands into it
 pub fn new_parser_from_tts<'a>(sess: &'a ParseSess,
+                               cfg: ast::CrateConfig,
                                tts: Vec<ast::TokenTree>) -> Parser<'a> {
-    tts_to_parser(sess, tts)
+    tts_to_parser(sess, tts, cfg)
 }
+
 
 // base abstractions
 
@@ -111,19 +232,33 @@ pub fn filemap_to_tts(sess: &ParseSess, filemap: Rc<FileMap>)
     -> Vec<ast::TokenTree> {
     // it appears to me that the cfg doesn't matter here... indeed,
     // parsing tt's probably shouldn't require a parser at all.
+    let cfg = Vec::new();
     let srdr = lexer::StringReader::new(&sess.span_diagnostic, filemap);
-    let mut p1 = Parser::new(sess, Box::new(srdr));
+    let mut p1 = Parser::new(sess, cfg, Box::new(srdr));
     panictry!(p1.parse_all_token_trees())
 }
 
 /// Given tts and produce a parser
 pub fn tts_to_parser<'a>(sess: &'a ParseSess,
-                         tts: Vec<ast::TokenTree>) -> Parser<'a> {
+                         tts: Vec<ast::TokenTree>,
+                         cfg: ast::CrateConfig) -> Parser<'a> {
     let trdr = lexer::TtReader::new(&sess.span_diagnostic, tts);
-    let mut p = Parser::new(sess, Box::new(trdr));
+    let mut p = Parser::new(sess, cfg, Box::new(trdr));
     p
 }
 
+fn abort_if_errors<'a, T>(result: PResult<'a, T>, p: &Parser) -> T {
+    match result {
+        Ok(c) => {
+            c
+        }
+        Err(mut e) => {
+            e.emit();
+            p.abort_if_errors();
+            unreachable!();
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -148,7 +283,7 @@ mod tests {
     let mut sr = StringReader::new(
       &sess.span_diagnostic,
       sess.codemap().new_filemap("bogofile".to_string(), "let x = 1;".to_string()));
-      let mut p1 = Parser::new(&sess, Box::new(sr));
+      let mut p1 = Parser::new(&sess, Vec::new(), Box::new(sr));
 
       for tt in p1.parse_all_token_trees().ok().unwrap().iter() {
         println!("{:?}", tt);
