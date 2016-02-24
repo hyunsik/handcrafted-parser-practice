@@ -265,7 +265,7 @@ mod tests {
   use super::*;
   use parse::token::Token;
   use codemap::{Span, BytePos, Pos};
-  use util::parser_testing::{string_to_tts};
+  use util::parser_testing::{string_to_tts, string_to_item};
   use parse::lexer::{Reader, StringReader};
   use parse::parser::Parser;
 
@@ -297,6 +297,10 @@ mod tests {
       //         break;
       //       }
       //     }
+  }
+
+  #[test] fn items_1() {
+    let x = string_to_item("fn a (b : i32) { b; }".to_string());
   }
 
 

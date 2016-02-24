@@ -17,6 +17,7 @@ use ast::{Ident, Item, ItemKind};
 use ast::{Lit, LitKind, UintTy};
 use ast::Local;
 use ast::{Delimited, SequenceRepetition, TokenTree};
+use ast::{Pat};
 use ast::{Stmt};
 use ast::{Ty, TyKind};
 use ast::{Visibility, WhereClause};
@@ -626,6 +627,10 @@ impl<'a> Parser<'a> {
     /// Parse an expression
     pub fn parse_expr(&mut self) -> PResult<'a, P<Expr>> {
         unimplemented!()
+    }
+
+    pub fn parse_pat(&mut self) -> PResult<'a, P<Pat>> {
+      unimplemented!()
     }
 
     /// Parse a statement. may include decl.

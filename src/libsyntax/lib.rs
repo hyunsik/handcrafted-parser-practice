@@ -38,6 +38,7 @@ pub mod codemap;
 pub mod errors;
 pub mod parse;
 pub mod ptr;
+pub mod str;
 
 pub mod print {
   pub mod pp;
