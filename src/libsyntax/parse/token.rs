@@ -103,6 +103,10 @@ pub enum Token {
     Ident(ast::Ident, IdentStyle),
     Underscore,
 
+    // Can be expanded into several tokens.
+    /// Doc comment
+    DocComment(ast::Name),
+
     // Junk. These carry no data because we don't really care about the data
     // they *would* carry, and don't really want to allocate a new ident for
     // them. Instead, users could extract that from the associated span.
@@ -279,53 +283,6 @@ impl Token {
             _ => false,
         }
     }
-}
-
-impl fmt::Display for Token {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    match *self {
-      /* Expression-operator symbols. */
-      Token::Eq            => write!(f, "Eq"),
-      Token::EqEq          => write!(f, "EqEq"),
-      Token::Lt            => write!(f, "Lt"),
-      Token::Le            => write!(f, "Le"),
-      Token::Not           => write!(f, "Not"),
-      Token::Ne            => write!(f, "Ne"),
-      Token::Gt            => write!(f, "Gt"),
-      Token::Ge            => write!(f, "Ge"),
-      Token::AndAnd        => write!(f, "AndAnd"),
-      Token::OrOr          => write!(f, "OrOr"),
-      Token::Tilde         => write!(f, "Tilde"),
-      Token::BinOp(tok)    => write!(f, "{:?}", tok),
-      Token::BinOpEq(tok)  => write!(f, "{:?}", tok),
-
-      /* Structural symbols */
-      Token::At            => write!(f, "At"),
-      Token::Dot           => write!(f, "Dot"),
-      Token::DotDot        => write!(f, "DotDot"),
-      Token::DotDotDot     => write!(f, "DotDotDot"),
-      Token::Comma         => write!(f, "Comma"),
-      Token::Semi          => write!(f, "Semi"),
-      Token::Colon         => write!(f, "Colon"),
-      Token::ModSep        => write!(f, "ModSep"),
-      Token::RArrow        => write!(f, "RArrow"),
-      Token::LArrow        => write!(f, "LArrow"),
-      Token::FatArrow      => write!(f, "FatArrow"),
-      Token::Pound         => write!(f, "Pound"),
-      Token::Dollar        => write!(f, "Dollar"),
-      Token::Question      => write!(f, "Question"),
-      Token::Underscore    => write!(f, "Underscore"),
-      Token::OpenDelim(t)  => write!(f, "{:?}", t),
-      Token::CloseDelim(t) => write!(f, "{:?}", t),
-
-      Token::Literal(_, _) => write!(f, "Literal"),
-      Token::Ident(n, _)   => write!(f, "Ident({})", n),
-      Token::Whitespace    => write!(f, "Whitespace"),
-      Token::Comment       => write!(f, "Comment"),
-      Token::Shebang(_)    => write!(f, "Shebang"),
-      Token::Eof           => write!(f, "Eof")
-    }
-  }
 }
 
 // Get the first "argument"

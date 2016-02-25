@@ -87,6 +87,7 @@ pub fn token_to_string(tok: &Token) -> String {
         token::Underscore           => "_".to_string(),
 
         /* Other */
+        token::DocComment(s)        => s.to_string(),
         token::Eof                  => "<eof>".to_string(),
         token::Whitespace           => " ".to_string(),
         token::Comment              => "/* */".to_string(),
