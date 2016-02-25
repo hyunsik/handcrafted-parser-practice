@@ -31,7 +31,7 @@ use parse::common::{SeqSep, seq_sep_none, seq_sep_trailing_allowed};
 use parse::obsolete::ObsoleteSyntax;
 use parse::ParseSess;
 use parse::token::{self, keywords};
-use parse::token::Token;
+use parse::token::{intern, Token, InternedString};
 use parse::lexer::{Reader, TokenAndSpan};
 use parse::PResult;
 use ptr::P;
@@ -472,6 +472,10 @@ impl<'a> Parser<'a> {
         &self.sess.span_diagnostic
     }
 
+    pub fn id_to_interned_str(&mut self, id: Ident) -> InternedString {
+        id.name.as_str()
+    }
+
     /// Is the current token one of the keywords that signals a bare function
     /// type?
     pub fn token_is_bare_fn_keyword(&mut self) -> bool {
@@ -707,24 +711,34 @@ impl<'a> Parser<'a> {
     /// extern crate.
     fn parse_item_(&mut self, attrs: Vec<Attribute>,
                    macros_allowed: bool, attributes_allowed: bool) -> PResult<'a, Option<P<Item>>> {
+      println!("Enter parse_item_");
+      println!("Tok: {:?}, Last Token: {:?}", self.token, self.last_token);
+      // self.bump();
+      // println!("After bump, Tok: {:?}, Last Token: {:?}", self.token, self.last_token);
 
       let lo = self.span.lo;
 
       let visibility = try!(self.parse_visibility());
+      println!("Visibility: {:?}", visibility);
 
       if self.eat_keyword(keywords::Use) {
+        println!("Keyword: Use");
       }
 
       if self.eat_keyword(keywords::Extern) {
+        println!("Keyword: Extern");
       }
 
       if self.eat_keyword(keywords::Static) {
+        println!("Keyword: Static");
       }
 
       if self.eat_keyword(keywords::Const) {
+        println!("Keyword: Const");
       }
 
       if self.check_keyword(keywords::Fn) {
+        println!("Keyword: Fn");
         // FUNCTION ITEM
         self.bump();
         let (ident, item_, extra_attrs) =
@@ -740,22 +754,27 @@ impl<'a> Parser<'a> {
       }
 
       if self.eat_keyword(keywords::Mod) {
+        println!("Keyword: Mod");
       }
 
       if self.eat_keyword(keywords::Type) {
+        println!("Keyword: Type");
       }
 
       if self.eat_keyword(keywords::Enum) {
+        println!("Keyword: Enum");
       }
 
       if self.eat_keyword(keywords::Struct) {
+        println!("Keyword: Struct");
       }
 
       unimplemented!()
     }
 
     pub fn parse_item(&mut self) -> PResult<'a, Option<P<Item>>> {
-      unimplemented!()
+      let attrs = try!(self.parse_outer_attributes());
+      self.parse_item_(attrs, true, false)
     }
 
     /// Parse visibility: PUB or nothing

@@ -242,7 +242,7 @@ pub fn filemap_to_tts(sess: &ParseSess, filemap: Rc<FileMap>)
 pub fn tts_to_parser<'a>(sess: &'a ParseSess,
                          tts: Vec<ast::TokenTree>,
                          cfg: ast::CrateConfig) -> Parser<'a> {
-    let trdr = lexer::TtReader::new(&sess.span_diagnostic, tts);
+    let trdr = lexer::new_tt_reader(&sess.span_diagnostic, None, tts);
     let mut p = Parser::new(sess, cfg, Box::new(trdr));
     p
 }
@@ -263,45 +263,68 @@ fn abort_if_errors<'a, T>(result: PResult<'a, T>, p: &Parser) -> T {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use parse::token::Token;
+  use ast::{self, TokenTree};
+  use parse::token::{Token, str_to_ident};
   use codemap::{Span, BytePos, Pos};
   use util::parser_testing::{string_to_tts, string_to_item};
   use parse::lexer::{Reader, StringReader};
   use parse::parser::Parser;
+
+  use std::rc::Rc;
 
   // produce a codemap::span
   fn sp(a: u32, b: u32) -> Span {
     Span {lo: BytePos(a), hi: BytePos(b)}
   }
 
-  #[test] fn string_to_tts_1() {
-    let tts = string_to_tts("fn a (b : i32) { b; }".to_string());
-  }
-
-  #[test] fn string_to_tts_2() {
-    let sess = ParseSess::new();
-    let mut sr = StringReader::new(
-      &sess.span_diagnostic,
-      sess.codemap().new_filemap("bogofile".to_string(), "let x = 1;".to_string()));
-      let mut p1 = Parser::new(&sess, Vec::new(), Box::new(sr));
-
-      for tt in p1.parse_all_token_trees().ok().unwrap().iter() {
-        println!("{:?}", tt);
-      }
-      // loop {
-      //       let toksp = sr.next_token();
-      //       print!("{} ", toksp.tok);
-
-      //       if toksp.tok == Token::Eof {
-      //         println!("");
-      //         break;
-      //       }
-      //     }
-  }
-
   #[test] fn items_1() {
     let x = string_to_item("fn a (b : i32) { b; }".to_string());
   }
 
+  #[test]
+    fn string_to_tts_1() {
+        let tts = string_to_tts("fn a (b : i32) { b; }".to_string());
 
+        let expected = vec![
+            TokenTree::Token(sp(0, 2),
+                         token::Ident(str_to_ident("fn"),
+                         token::IdentStyle::Plain)),
+            TokenTree::Token(sp(3, 4),
+                         token::Ident(str_to_ident("a"),
+                         token::IdentStyle::Plain)),
+            TokenTree::Delimited(
+                sp(5, 14),
+                Rc::new(ast::Delimited {
+                    delim: token::DelimToken::Paren,
+                    open_span: sp(5, 6),
+                    tts: vec![
+                        TokenTree::Token(sp(6, 7),
+                                     token::Ident(str_to_ident("b"),
+                                     token::IdentStyle::Plain)),
+                        TokenTree::Token(sp(8, 9),
+                                     token::Colon),
+                        TokenTree::Token(sp(10, 13),
+                                     token::Ident(str_to_ident("i32"),
+                                     token::IdentStyle::Plain)),
+                    ],
+                    close_span: sp(13, 14),
+                })),
+            TokenTree::Delimited(
+                sp(15, 21),
+                Rc::new(ast::Delimited {
+                    delim: token::DelimToken::Brace,
+                    open_span: sp(15, 16),
+                    tts: vec![
+                        TokenTree::Token(sp(17, 18),
+                                     token::Ident(str_to_ident("b"),
+                                     token::IdentStyle::Plain)),
+                        TokenTree::Token(sp(18, 19),
+                                     token::Semi)
+                    ],
+                    close_span: sp(20, 21),
+                }))
+        ];
+
+        assert_eq!(tts, expected);
+    }
 }

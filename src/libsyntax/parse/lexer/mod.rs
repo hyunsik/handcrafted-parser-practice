@@ -10,6 +10,12 @@ use errors::{FatalError, Handler, DiagnosticBuilder};
 use parse::token::{self, str_to_ident};
 use str::char_at;
 
+pub mod comments;
+pub mod transcribe;
+
+use parse::lexer::transcribe::tt_next_token;
+pub use parse::lexer::transcribe::{TtReader, new_tt_reader, new_tt_reader_with_doc_flag};
+
 pub trait Reader {
     fn is_eof(&self) -> bool;
     fn next_token(&mut self) -> TokenAndSpan;
@@ -30,75 +36,6 @@ pub trait Reader {
         }
       }
       t
-    }
-}
-
-pub struct TtReader<'a> {
-  pub sp_diag: &'a Handler,
-  tt: Vec<ast::TokenTree>,
-  cur_idx: usize,
-
-  /* cached: */
-  pub cur_tok: token::Token,
-  pub cur_span: Span,
-}
-
-impl<'a> TtReader<'a> {
-  pub fn new(sp_diag: &'a Handler, tt: Vec<ast::TokenTree>) -> TtReader<'a> {
-    TtReader {
-      sp_diag: sp_diag,
-      tt: tt,
-      cur_idx: 0,
-      /* dummy values, never read: */
-      cur_tok: token::Eof,
-      cur_span: DUMMY_SP,
-    }
-  }
-}
-
-impl<'a> Reader for TtReader<'a> {
-    fn is_eof(&self) -> bool {
-      self.cur_tok == token::Eof
-    }
-
-    fn next_token(&mut self) -> TokenAndSpan {
-      let ret_val = TokenAndSpan {
-        tok: self.cur_tok.clone(),
-        sp: self.cur_span.clone(),
-      };
-
-      let cur_idx = self.cur_idx;
-
-      if cur_idx <= self.tt.len() {
-        match self.tt[cur_idx].clone() {
-          TokenTree::Token(sp, token) => {
-            self.cur_tok = token;
-            self.cur_span = sp;
-          }
-          _ => panic!("not TokenTree::Token")
-        }
-
-        self.cur_idx += 1;
-      }
-
-      ret_val
-    }
-
-    /// Report a fatal error with the current span.
-    fn fatal(&self, m: &str) -> FatalError {
-      self.sp_diag.span_fatal(self.cur_span, m)
-    }
-
-    /// Report a non-fatal error with the current span.
-    fn err(&self, m: &str) {
-      self.sp_diag.span_fatal(self.cur_span, m);
-    }
-
-    fn peek(&self) -> TokenAndSpan {
-      TokenAndSpan {
-        tok: self.cur_tok.clone(),
-        sp: self.cur_span,
-      }
     }
 }
 
@@ -154,6 +91,29 @@ impl<'a> Reader for StringReader<'a> {
       sp: self.peek_span,
     }
   }
+}
+
+impl<'a> Reader for TtReader<'a> {
+    fn is_eof(&self) -> bool {
+        self.cur_tok == token::Eof
+    }
+    fn next_token(&mut self) -> TokenAndSpan {
+        let r = tt_next_token(self);
+        debug!("TtReader: r={:?}", r);
+        r
+    }
+    fn fatal(&self, m: &str) -> FatalError {
+        self.sp_diag.span_fatal(self.cur_span, m)
+    }
+    fn err(&self, m: &str) {
+        self.sp_diag.span_err(self.cur_span, m);
+    }
+    fn peek(&self) -> TokenAndSpan {
+        TokenAndSpan {
+            tok: self.cur_tok.clone(),
+            sp: self.cur_span,
+        }
+    }
 }
 
 impl<'a> StringReader<'a> {

@@ -10,7 +10,30 @@ use ptr::P;
 impl<'a> Parser<'a> {
     /// Parse attributes that appear before an item
     pub fn parse_outer_attributes(&mut self) -> PResult<'a, Vec<ast::Attribute>> {
-      unimplemented!()
+      let mut attrs: Vec<ast::Attribute> = Vec::new();
+        loop {
+            debug!("parse_outer_attributes: self.token={:?}", self.token);
+            match self.token {
+                token::Pound => {
+                    attrs.push(try!(self.parse_attribute(false)));
+                }
+                token::DocComment(s) => {
+                    let attr = ::attr::mk_sugared_doc_attr(
+                    attr::mk_attr_id(),
+                    self.id_to_interned_str(ast::Ident::with_empty_ctxt(s)),
+                    self.span.lo,
+                    self.span.hi
+                );
+                    if attr.node.style != ast::AttrStyle::Outer {
+                        return Err(self.fatal("expected outer comment"));
+                    }
+                    attrs.push(attr);
+                    self.bump();
+                }
+                _ => break,
+            }
+        }
+        return Ok(attrs);
     }
 
     /// Matches `attribute = # ! [ meta_item ]`

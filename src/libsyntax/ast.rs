@@ -8,6 +8,8 @@ use rustc_serialize::{Encodable, Decodable, Encoder, Decoder};
 use abi::Abi;
 use attr::ThinAttributes;
 use codemap::{Span, Spanned};
+use parse::lexer;
+use parse::lexer::comments::{doc_comment_style, strip_doc_comment_decoration};
 use parse::token::InternedString;
 use parse::token;
 use print::pprust;
@@ -736,6 +738,87 @@ pub enum TokenTree {
     /// A kleene-style repetition sequence with a span
     // FIXME(eddyb) #12938 Use DST.
     Sequence(Span, Rc<SequenceRepetition>),
+}
+
+impl TokenTree {
+    pub fn len(&self) -> usize {
+        match *self {
+            TokenTree::Token(_, token::DocComment(name)) => {
+                match doc_comment_style(&name.as_str()) {
+                    AttrStyle::Outer => 2,
+                    AttrStyle::Inner => 3
+                }
+            }
+            TokenTree::Delimited(_, ref delimed) => {
+                delimed.tts.len() + 2
+            }
+            TokenTree::Sequence(_, ref seq) => {
+                seq.tts.len()
+            }
+            TokenTree::Token(..) => 0
+        }
+    }
+
+    pub fn get_tt(&self, index: usize) -> TokenTree {
+        match (self, index) {
+            (&TokenTree::Token(sp, token::DocComment(_)), 0) => {
+                TokenTree::Token(sp, token::Pound)
+            }
+            (&TokenTree::Token(sp, token::DocComment(name)), 1)
+            if doc_comment_style(&name.as_str()) == AttrStyle::Inner => {
+                TokenTree::Token(sp, token::Not)
+            }
+            (&TokenTree::Token(sp, token::DocComment(name)), _) => {
+                let stripped = strip_doc_comment_decoration(&name.as_str());
+
+                // Searches for the occurrences of `"#*` and returns the minimum number of `#`s
+                // required to wrap the text.
+                let num_of_hashes = stripped.chars().scan(0, |cnt, x| {
+                    *cnt = if x == '"' {
+                        1
+                    } else if *cnt != 0 && x == '#' {
+                        *cnt + 1
+                    } else {
+                        0
+                    };
+                    Some(*cnt)
+                }).max().unwrap_or(0);
+
+                TokenTree::Delimited(sp, Rc::new(Delimited {
+                    delim: token::Bracket,
+                    open_span: sp,
+                    tts: vec![TokenTree::Token(sp, token::Ident(token::str_to_ident("doc"),
+                                                                token::Plain)),
+                              TokenTree::Token(sp, token::Eq),
+                              TokenTree::Token(sp, token::Literal(
+                                  token::StrRaw(token::intern(&stripped), num_of_hashes), None))],
+                    close_span: sp,
+                }))
+            }
+            (&TokenTree::Delimited(_, ref delimed), _) => {
+                if index == 0 {
+                    return delimed.open_tt();
+                }
+                if index == delimed.tts.len() + 1 {
+                    return delimed.close_tt();
+                }
+                delimed.tts[index - 1].clone()
+            }
+            (&TokenTree::Sequence(_, ref seq), _) => {
+                seq.tts[index].clone()
+            }
+            _ => panic!("Cannot expand a token tree")
+        }
+    }
+
+    /// Returns the `Span` corresponding to this token tree.
+    pub fn get_span(&self) -> Span {
+        match *self {
+            TokenTree::Token(span, _)     => span,
+            TokenTree::Delimited(span, _) => span,
+            TokenTree::Sequence(span, _)  => span,
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug, Copy)]
