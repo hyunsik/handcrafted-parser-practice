@@ -715,6 +715,8 @@ impl Expr {
 
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash,)]
 pub enum ExprKind {
+  /// First expr is the place; second expr is the value.
+  InPlace(P<Expr>, P<Expr>),
   /// An array (`[a, b, c, d]`)
   Vec(Vec<P<Expr>>),
   /// A function call

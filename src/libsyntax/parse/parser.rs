@@ -12,7 +12,7 @@ use ast::Block;
 use ast::{BlockCheckMode, CaptureBy};
 use ast::{Constness, Crate, CrateConfig};
 use ast::{Decl, DeclKind};
-use ast::{Expr};
+use ast::{Expr, ExprKind};
 use ast::{FnDecl, FunctionRetTy};
 use ast::{Ident, Item, ItemKind};
 use ast::{Lit, LitKind, UintTy};
@@ -22,6 +22,7 @@ use ast::{BindingMode, Mutability, Pat, PatKind};
 use ast::{Stmt, StmtKind};
 use ast::{Ty, TyKind};
 use ast::{Visibility, WhereClause};
+use ast::{BinOpKind, UnOp};
 use ast;
 use ast_util;
 use attr::{ThinAttributes, ThinAttributesExt, AttributesExt};
@@ -39,6 +40,7 @@ use parse::token::{intern, Token, InternedString};
 use parse::lexer::{Reader, TokenAndSpan};
 use parse::PResult;
 use ptr::P;
+use util::parser::{AssocOp, Fixity};
 
 bitflags! {
     flags Restrictions: u8 {
@@ -141,6 +143,28 @@ fn maybe_append(mut lhs: Vec<Attribute>, rhs: Option<Vec<Attribute>>)
         lhs.extend(attrs.iter().cloned())
     }
     lhs
+}
+
+pub enum LhsExpr {
+    NotYetParsed,
+    AttributesParsed(ThinAttributes),
+    AlreadyParsed(P<Expr>),
+}
+
+impl From<Option<ThinAttributes>> for LhsExpr {
+    fn from(o: Option<ThinAttributes>) -> Self {
+        if let Some(attrs) = o {
+            LhsExpr::AttributesParsed(attrs)
+        } else {
+            LhsExpr::NotYetParsed
+        }
+    }
+}
+
+impl From<P<Expr>> for LhsExpr {
+    fn from(expr: P<Expr>) -> Self {
+        LhsExpr::AlreadyParsed(expr)
+    }
 }
 
 impl<'a> Parser<'a> {
@@ -808,8 +832,64 @@ impl<'a> Parser<'a> {
       unimplemented!()
     }
 
+    pub fn mk_expr(&mut self, lo: BytePos, hi: BytePos,
+                   node: ExprKind, attrs: ThinAttributes) -> P<Expr> {
+        P(Expr {
+            id: ast::DUMMY_NODE_ID,
+            node: node,
+            span: mk_sp(lo, hi),
+            attrs: attrs,
+        })
+    }
+
+    pub fn mk_unary(&mut self, unop: ast::UnOp, expr: P<Expr>) -> ast::ExprKind {
+        ExprKind::Unary(unop, expr)
+    }
+
+    pub fn mk_binary(&mut self, binop: ast::BinOp, lhs: P<Expr>, rhs: P<Expr>) -> ast::ExprKind {
+        ExprKind::Binary(binop, lhs, rhs)
+    }
+
+    pub fn mk_call(&mut self, f: P<Expr>, args: Vec<P<Expr>>) -> ast::ExprKind {
+        ExprKind::Call(f, args)
+    }
+
+    pub fn mk_index(&mut self, expr: P<Expr>, idx: P<Expr>) -> ast::ExprKind {
+        ExprKind::Index(expr, idx)
+    }
+
+    pub fn mk_range(&mut self,
+                    start: Option<P<Expr>>,
+                    end: Option<P<Expr>>)
+                    -> ast::ExprKind {
+        ExprKind::Range(start, end)
+    }
+
+    pub fn mk_field(&mut self, expr: P<Expr>, ident: ast::SpannedIdent) -> ast::ExprKind {
+        ExprKind::Field(expr, ident)
+    }
+
+    pub fn mk_tup_field(&mut self, expr: P<Expr>, idx: codemap::Spanned<usize>) -> ast::ExprKind {
+        ExprKind::TupField(expr, idx)
+    }
+
+    pub fn mk_assign_op(&mut self, binop: ast::BinOp,
+                        lhs: P<Expr>, rhs: P<Expr>) -> ast::ExprKind {
+        ExprKind::AssignOp(binop, lhs, rhs)
+    }
+
     fn parse_unquoted(&mut self) -> PResult<'a, TokenTree> {
       unimplemented!()
+    }
+
+    fn parse_or_use_outer_attributes(&mut self,
+                                     already_parsed_attrs: Option<ThinAttributes>)
+                                     -> PResult<'a, ThinAttributes> {
+        if let Some(attrs) = already_parsed_attrs {
+            Ok(attrs)
+        } else {
+            self.parse_outer_attributes().map(|a| a.into_thin_attrs())
+        }
     }
 
     /// parse a single token tree from the input.
@@ -893,6 +973,232 @@ impl<'a> Parser<'a> {
             tts.push(try!(self.parse_token_tree()));
         }
         Ok(tts)
+    }
+
+    /// Parse a prefix-unary-operator expr
+    pub fn parse_prefix_expr(&mut self,
+                             already_parsed_attrs: Option<ThinAttributes>)
+                             -> PResult<'a, P<Expr>> {
+      unimplemented!()
+    }
+
+    /// Parse an associative expression
+    ///
+    /// This parses an expression accounting for associativity and precedence of the operators in
+    /// the expression.
+    pub fn parse_assoc_expr(&mut self,
+                            already_parsed_attrs: Option<ThinAttributes>)
+                            -> PResult<'a, P<Expr>> {
+        self.parse_assoc_expr_with(0, already_parsed_attrs.into())
+    }
+
+    /// Parse an associative expression with operators of at least `min_prec` precedence
+    pub fn parse_assoc_expr_with(&mut self,
+                                 min_prec: usize,
+                                 lhs: LhsExpr)
+                                 -> PResult<'a, P<Expr>> {
+        let mut lhs = if let LhsExpr::AlreadyParsed(expr) = lhs {
+            expr
+        } else {
+            let attrs = match lhs {
+                LhsExpr::AttributesParsed(attrs) => Some(attrs),
+                _ => None,
+            };
+            if self.token == token::DotDot {
+                return self.parse_prefix_range_expr(attrs);
+            } else {
+                try!(self.parse_prefix_expr(attrs))
+            }
+        };
+
+
+        if self.expr_is_complete(&lhs) {
+            // Semi-statement forms are odd. See https://github.com/rust-lang/rust/issues/29071
+            return Ok(lhs);
+        }
+        self.expected_tokens.push(TokenType::Operator);
+        while let Some(op) = AssocOp::from_token(&self.token) {
+
+            let lhs_span = if self.last_token_interpolated {
+                self.last_span
+            } else {
+                lhs.span
+            };
+
+            let cur_op_span = self.span;
+            let restrictions = if op.is_assign_like() {
+                self.restrictions & RESTRICTION_NO_STRUCT_LITERAL
+            } else {
+                self.restrictions
+            };
+            if op.precedence() < min_prec {
+                break;
+            }
+            self.bump();
+            if op.is_comparison() {
+                self.check_no_chained_comparison(&lhs, &op);
+            }
+            // Special cases:
+            if op == AssocOp::As {
+                let rhs = try!(self.parse_ty());
+                lhs = self.mk_expr(lhs_span.lo, rhs.span.hi,
+                                   ExprKind::Cast(lhs, rhs), None);
+                continue
+            } else if op == AssocOp::Colon {
+                let rhs = try!(self.parse_ty());
+                lhs = self.mk_expr(lhs_span.lo, rhs.span.hi,
+                                   ExprKind::Type(lhs, rhs), None);
+                continue
+            } else if op == AssocOp::DotDot {
+                    // If we didn’t have to handle `x..`, it would be pretty easy to generalise
+                    // it to the Fixity::None code.
+                    //
+                    // We have 2 alternatives here: `x..y` and `x..` The other two variants are
+                    // handled with `parse_prefix_range_expr` call above.
+                    let rhs = if self.is_at_start_of_range_notation_rhs() {
+                        let rhs = self.parse_assoc_expr_with(op.precedence() + 1,
+                                                             LhsExpr::NotYetParsed);
+                        match rhs {
+                            Ok(e) => Some(e),
+                            Err(mut e) => {
+                                e.cancel();
+                                None
+                            }
+                        }
+                    } else {
+                        None
+                    };
+                    let (lhs_span, rhs_span) = (lhs_span, if let Some(ref x) = rhs {
+                        x.span
+                    } else {
+                        cur_op_span
+                    });
+                    let r = self.mk_range(Some(lhs), rhs);
+                    lhs = self.mk_expr(lhs_span.lo, rhs_span.hi, r, None);
+                    break
+            }
+
+            let rhs = try!(match op.fixity() {
+                Fixity::Right => self.with_res(
+                    restrictions - RESTRICTION_STMT_EXPR,
+                    |this| {
+                        this.parse_assoc_expr_with(op.precedence(),
+                            LhsExpr::NotYetParsed)
+                }),
+                Fixity::Left => self.with_res(
+                    restrictions - RESTRICTION_STMT_EXPR,
+                    |this| {
+                        this.parse_assoc_expr_with(op.precedence() + 1,
+                            LhsExpr::NotYetParsed)
+                }),
+                // We currently have no non-associative operators that are not handled above by
+                // the special cases. The code is here only for future convenience.
+                Fixity::None => self.with_res(
+                    restrictions - RESTRICTION_STMT_EXPR,
+                    |this| {
+                        this.parse_assoc_expr_with(op.precedence() + 1,
+                            LhsExpr::NotYetParsed)
+                }),
+            });
+
+            lhs = match op {
+                AssocOp::Add | AssocOp::Subtract | AssocOp::Multiply | AssocOp::Divide |
+                AssocOp::Modulus | AssocOp::LAnd | AssocOp::LOr | AssocOp::BitXor |
+                AssocOp::BitAnd | AssocOp::BitOr | AssocOp::ShiftLeft | AssocOp::ShiftRight |
+                AssocOp::Equal | AssocOp::Less | AssocOp::LessEqual | AssocOp::NotEqual |
+                AssocOp::Greater | AssocOp::GreaterEqual => {
+                    let ast_op = op.to_ast_binop().unwrap();
+                    let (lhs_span, rhs_span) = (lhs_span, rhs.span);
+                    let binary = self.mk_binary(codemap::respan(cur_op_span, ast_op), lhs, rhs);
+                    self.mk_expr(lhs_span.lo, rhs_span.hi, binary, None)
+                }
+                AssocOp::Assign =>
+                    self.mk_expr(lhs_span.lo, rhs.span.hi, ExprKind::Assign(lhs, rhs), None),
+                AssocOp::Inplace =>
+                    self.mk_expr(lhs_span.lo, rhs.span.hi, ExprKind::InPlace(lhs, rhs), None),
+                AssocOp::AssignOp(k) => {
+                    let aop = match k {
+                        token::Plus =>    BinOpKind::Add,
+                        token::Minus =>   BinOpKind::Sub,
+                        token::Star =>    BinOpKind::Mul,
+                        token::Slash =>   BinOpKind::Div,
+                        token::Percent => BinOpKind::Rem,
+                        token::Caret =>   BinOpKind::BitXor,
+                        token::And =>     BinOpKind::BitAnd,
+                        token::Or =>      BinOpKind::BitOr,
+                        token::Shl =>     BinOpKind::Shl,
+                        token::Shr =>     BinOpKind::Shr,
+                    };
+                    let (lhs_span, rhs_span) = (lhs_span, rhs.span);
+                    let aopexpr = self.mk_assign_op(codemap::respan(cur_op_span, aop), lhs, rhs);
+                    self.mk_expr(lhs_span.lo, rhs_span.hi, aopexpr, None)
+                }
+                AssocOp::As | AssocOp::Colon | AssocOp::DotDot => {
+                    self.bug("As, Colon or DotDot branch reached")
+                }
+            };
+
+            if op.fixity() == Fixity::None { break }
+        }
+        Ok(lhs)
+    }
+
+    /// Produce an error if comparison operators are chained (RFC #558).
+    /// We only need to check lhs, not rhs, because all comparison ops
+    /// have same precedence and are left-associative
+    fn check_no_chained_comparison(&mut self, lhs: &Expr, outer_op: &AssocOp) {
+        debug_assert!(outer_op.is_comparison());
+        match lhs.node {
+            ExprKind::Binary(op, _, _) if op.node.is_comparison() => {
+                // respan to include both operators
+                let op_span = mk_sp(op.span.lo, self.span.hi);
+                let mut err = self.diagnostic().struct_span_err(op_span,
+                    "chained comparison operators require parentheses");
+                if op.node == BinOpKind::Lt && *outer_op == AssocOp::Greater {
+                    err.fileline_help(op_span,
+                        "use `::<...>` instead of `<...>` if you meant to specify type arguments");
+                }
+                err.emit();
+            }
+            _ => {}
+        }
+    }
+
+    /// Parse prefix-forms of range notation: `..expr` and `..`
+    fn parse_prefix_range_expr(&mut self,
+                               already_parsed_attrs: Option<ThinAttributes>)
+                               -> PResult<'a, P<Expr>> {
+        debug_assert!(self.token == token::DotDot);
+        let attrs = try!(self.parse_or_use_outer_attributes(already_parsed_attrs));
+        let lo = self.span.lo;
+        let mut hi = self.span.hi;
+        self.bump();
+        let opt_end = if self.is_at_start_of_range_notation_rhs() {
+            // RHS must be parsed with more associativity than DotDot.
+            let next_prec = AssocOp::from_token(&token::DotDot).unwrap().precedence() + 1;
+            Some(try!(self.parse_assoc_expr_with(next_prec,
+                                                 LhsExpr::NotYetParsed)
+            .map(|x|{
+                hi = x.span.hi;
+                x
+            })))
+         } else {
+            None
+        };
+        let r = self.mk_range(None, opt_end);
+        Ok(self.mk_expr(lo, hi, r, attrs))
+    }
+
+    fn is_at_start_of_range_notation_rhs(&self) -> bool {
+        if self.token.can_begin_expr() {
+            // parse `for i in 1.. { }` as infinite loop, not as `for i in (1..{})`.
+            if self.token == token::OpenDelim(token::Brace) {
+                return !self.restrictions.contains(RESTRICTION_NO_STRUCT_LITERAL);
+            }
+            true
+        } else {
+            false
+        }
     }
 
     /// Parse an expression
@@ -1195,6 +1501,12 @@ impl<'a> Parser<'a> {
                 }
             }
         }))
+    }
+
+    /// Is this expression a successfully-parsed statement?
+    fn expr_is_complete(&mut self, e: &Expr) -> bool {
+        self.restrictions.contains(RESTRICTION_STMT_EXPR) &&
+            !classify::expr_requires_semi_to_be_stmt(e)
     }
 
     /// Parse a block. No inner attrs are allowed.

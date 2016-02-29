@@ -52,5 +52,6 @@ pub mod print {
 
 pub mod util {
   pub mod interner;
+  pub mod parser;
   pub mod parser_testing;
 }
