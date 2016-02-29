@@ -2,6 +2,7 @@
 #![feature(convert)]
 #![feature(libc)]
 #![feature(filling_drop)]
+#![feature(str_escape)]
 
 #[macro_use] extern crate bitflags;
 extern crate libc;

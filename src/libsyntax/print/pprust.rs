@@ -84,6 +84,7 @@ pub fn token_to_string(tok: &Token) -> String {
 
         /* Name components */
         token::Ident(s, _)          => s.to_string(),
+        token::Lifetime(s)          => s.to_string(),
         token::Underscore           => "_".to_string(),
 
         /* Other */

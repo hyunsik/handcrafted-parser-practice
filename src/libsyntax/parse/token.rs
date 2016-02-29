@@ -58,6 +58,19 @@ pub enum Lit {
   ByteStrRaw(ast::Name, usize), /* raw byte str delimited by n hash symbols */
 }
 
+impl Lit {
+    pub fn short_name(&self) -> &'static str {
+        match *self {
+            Byte(_) => "byte",
+            Char(_) => "char",
+            Integer(_) => "integer",
+            Float(_) => "float",
+            Str_(_) | StrRaw(..) => "string",
+            ByteStr(_) | ByteStrRaw(..) => "byte string"
+        }
+    }
+}
+
 #[allow(non_camel_case_types)]
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Token {
@@ -102,6 +115,7 @@ pub enum Token {
     /* Name components */
     Ident(ast::Ident, IdentStyle),
     Underscore,
+    Lifetime(ast::Ident),
 
     // Can be expanded into several tokens.
     /// Doc comment
@@ -181,6 +195,20 @@ impl Token {
             Ident(_, Plain) => true,
             _               => false,
         }
+    }
+
+    /// Returns `true` if the token is a lifetime.
+    pub fn is_lifetime(&self) -> bool {
+        match *self {
+            Lifetime(..) => true,
+            _            => false,
+        }
+    }
+
+    /// Returns `true` if the token is either the `mut` or `const` keyword.
+    pub fn is_mutability(&self) -> bool {
+        self.is_keyword(keywords::Mut) ||
+        self.is_keyword(keywords::Const)
     }
 
     /// Maps a token to its corresponding binary operator.
@@ -580,10 +608,23 @@ impl Encodable for InternedString {
     }
 }
 
+/// Interns and returns the string contents of an identifier, using the
+/// thread-local interner.
+#[inline]
+pub fn intern_and_get_ident(s: &str) -> InternedString {
+    intern(s).as_str()
+}
+
 /// Maps a string to its interned representation.
 #[inline]
 pub fn intern(s: &str) -> ast::Name {
     get_ident_interner().intern(s)
+}
+
+/// gensym's a new usize, using the current interner.
+#[inline]
+pub fn gensym(s: &str) -> ast::Name {
+    get_ident_interner().gensym(s)
 }
 
 /// Maps a string to an identifier with an empty syntax context.
@@ -591,3 +632,10 @@ pub fn intern(s: &str) -> ast::Name {
 pub fn str_to_ident(s: &str) -> ast::Ident {
     ast::Ident::with_empty_ctxt(intern(s))
 }
+
+/// Maps a string to a gensym'ed identifier.
+#[inline]
+pub fn gensym_ident(s: &str) -> ast::Ident {
+    ast::Ident::with_empty_ctxt(gensym(s))
+}
+
