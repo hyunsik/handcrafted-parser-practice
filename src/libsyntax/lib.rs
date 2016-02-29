@@ -24,8 +24,8 @@ macro_rules! panictry {
         match $e {
             Ok(e) => e,
             Err(mut e) => {
-                e.emit();
-                panic!(FatalError);
+              e.emit();
+              panic!(FatalError);
             }
         }
     })
@@ -33,12 +33,17 @@ macro_rules! panictry {
 
 pub mod abi;
 pub mod ast;
+pub mod ast_util;
 pub mod attr;
 pub mod codemap;
 pub mod errors;
 pub mod parse;
 pub mod ptr;
 pub mod str;
+
+pub mod diagnostics {
+  pub mod registry;
+}
 
 pub mod print {
   pub mod pp;

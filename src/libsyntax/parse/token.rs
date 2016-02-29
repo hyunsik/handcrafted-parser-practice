@@ -277,7 +277,7 @@ impl Token {
             Ident(sid, Plain) => {
                 let n = sid.name;
 
-                   RESERVED_KEYWORD_START <= n
+                    RESERVED_KEYWORD_START <= n
                 && n <= RESERVED_KEYWORD_FINAL
             },
             _ => false,
@@ -426,12 +426,16 @@ declare_special_idents_and_keywords! {
         (19,                         Fn,         "fn");
         (20,                         For,        "for");
         (21,                         If,         "if");
+        (22,                         Impl,       "impl");
         (23,                         In,         "in");
         (24,                         Let,        "let");
         (25,                         Loop,       "loop");
         (26,                         Match,      "match");
         (27,                         Mod,        "mod");
+        (28,                         Move,       "move");
+        (29,                         Mut,        "mut");
         (30,                         Pub,        "pub");
+        (31,                         Ref,        "ref");
         (32,                         Return,     "return");
         // Static and Self are also special idents (prefill de-dupes)
         (super::STATIC_KEYWORD_NAME_NUM, Static, "static");
@@ -446,12 +450,26 @@ declare_special_idents_and_keywords! {
         (38,                         Use,        "use");
         (39,                         While,      "while");
         (40,                         Continue,   "continue");
+        (41,                         Box,        "box");
         (42,                         Const,      "const");
         (43,                         Where,      "where");
         'reserved:
-        (44,                         Virtual,    "select");
+        (44,                         Virtual,    "virtual");
+        (45,                         Proc,       "proc");
+        (46,                         Alignof,    "alignof");
+        (47,                         Become,     "become");
+        (48,                         Offsetof,   "offsetof");
+        (49,                         Priv,       "priv");
+        (50,                         Pure,       "pure");
+        (51,                         Sizeof,     "sizeof");
         (52,                         Typeof,     "typeof");
+        (53,                         Unsized,    "unsized");
+        (54,                         Yield,      "yield");
         (55,                         Do,         "do");
+        (56,                         Abstract,   "abstract");
+        (57,                         Final,      "final");
+        (58,                         Override,   "override");
+        (59,                         Macro,      "macro");
     }
 }
 

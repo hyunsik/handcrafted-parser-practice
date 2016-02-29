@@ -6,7 +6,8 @@ use self::RenderSpan::*;
 pub mod emitter;
 
 use codemap::{self, CodeMap, MultiSpan};
-use errors::emitter::{Emitter, EmitterWriter, Registry};
+use errors::emitter::{Emitter, EmitterWriter};
+use diagnostics;
 
 use std::cell::{RefCell, Cell};
 use std::{error, fmt};
@@ -53,6 +54,77 @@ impl RenderSpan {
             FileLine(ref msp) =>
                 msp
         }
+    }
+}
+
+impl CodeSuggestion {
+    /// Returns the assembled code suggestion.
+    pub fn splice_lines(&self, cm: &CodeMap) -> String {
+        use codemap::{CharPos, Loc, Pos};
+
+        fn push_trailing(buf: &mut String, line_opt: Option<&str>,
+                         lo: &Loc, hi_opt: Option<&Loc>) {
+            let (lo, hi_opt) = (lo.col.to_usize(), hi_opt.map(|hi|hi.col.to_usize()));
+            if let Some(line) = line_opt {
+                if line.len() > lo {
+                    buf.push_str(match hi_opt {
+                        Some(hi) => &line[lo..hi],
+                        None => &line[lo..],
+                    });
+                }
+                if let None = hi_opt {
+                    buf.push('\n');
+                }
+            }
+        }
+        let bounds = self.msp.to_span_bounds();
+        let lines = cm.span_to_lines(bounds).unwrap();
+        assert!(!lines.lines.is_empty());
+
+        // This isn't strictly necessary, but would in all likelyhood be an error
+        assert_eq!(self.msp.spans.len(), self.substitutes.len());
+
+        // To build up the result, we do this for each span:
+        // - push the line segment trailing the previous span
+        //   (at the beginning a "phantom" span pointing at the start of the line)
+        // - push lines between the previous and current span (if any)
+        // - if the previous and current span are not on the same line
+        //   push the line segment leading up to the current span
+        // - splice in the span substitution
+        //
+        // Finally push the trailing line segment of the last span
+        let fm = &lines.file;
+        let mut prev_hi = cm.lookup_char_pos(bounds.lo);
+        prev_hi.col = CharPos::from_usize(0);
+
+        let mut prev_line = fm.get_line(lines.lines[0].line_index);
+        let mut buf = String::new();
+
+        for (sp, substitute) in self.msp.spans.iter().zip(self.substitutes.iter()) {
+            let cur_lo = cm.lookup_char_pos(sp.lo);
+            if prev_hi.line == cur_lo.line {
+                push_trailing(&mut buf, prev_line, &prev_hi, Some(&cur_lo));
+            } else {
+                push_trailing(&mut buf, prev_line, &prev_hi, None);
+                // push lines between the previous and current span (if any)
+                for idx in prev_hi.line..(cur_lo.line - 1) {
+                    if let Some(line) = fm.get_line(idx) {
+                        buf.push_str(line);
+                        buf.push('\n');
+                    }
+                }
+                if let Some(cur_line) = fm.get_line(cur_lo.line - 1) {
+                    buf.push_str(&cur_line[.. cur_lo.col.to_usize()]);
+                }
+            }
+            buf.push_str(substitute);
+            prev_hi = cm.lookup_char_pos(sp.hi);
+            prev_line = fm.get_line(prev_hi.line - 1);
+        }
+        push_trailing(&mut buf, prev_line, &prev_hi, None);
+        // remove trailing newline
+        buf.pop();
+        buf
     }
 }
 
@@ -295,7 +367,7 @@ pub struct Handler {
 
 impl Handler {
     pub fn with_tty_emitter(color_config: ColorConfig,
-                            registry: Option<Registry>,
+                            registry: Option<diagnostics::registry::Registry>,
                             can_emit_warnings: bool,
                             treat_err_as_bug: bool,
                             cm: Rc<codemap::CodeMap>)

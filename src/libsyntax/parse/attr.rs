@@ -51,7 +51,35 @@ impl<'a> Parser<'a> {
 
     /// matches inner_attrs*
     pub fn parse_inner_attributes(&mut self) -> PResult<'a, Vec<ast::Attribute>> {
-      unimplemented!()
+        let mut attrs: Vec<ast::Attribute> = vec![];
+        loop {
+            match self.token {
+                token::Pound => {
+                    // Don't even try to parse if it's not an inner attribute.
+                    if !self.look_ahead(1, |t| t == &token::Not) {
+                        break;
+                    }
+
+                    let attr = try!(self.parse_attribute(true));
+                    assert!(attr.node.style == ast::AttrStyle::Inner);
+                    attrs.push(attr);
+                }
+                token::DocComment(s) => {
+                    // we need to get the position of this token before we bump.
+                    let Span { lo, hi, .. } = self.span;
+                    let str = self.id_to_interned_str(ast::Ident::with_empty_ctxt(s));
+                    let attr = attr::mk_sugared_doc_attr(attr::mk_attr_id(), str, lo, hi);
+                    if attr.node.style == ast::AttrStyle::Inner {
+                        attrs.push(attr);
+                        self.bump();
+                    } else {
+                        break;
+                    }
+                }
+                _ => break,
+            }
+        }
+        Ok(attrs)
     }
 
     /// matches meta_item = IDENT

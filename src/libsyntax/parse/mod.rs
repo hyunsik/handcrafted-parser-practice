@@ -10,14 +10,15 @@ use std::rc::Rc;
 
 pub type PResult<'a, T> = Result<T, DiagnosticBuilder<'a>>;
 
-pub mod attr;
 #[macro_use]
 pub mod parser;
 
 pub mod lexer;
 pub mod token;
+pub mod attr;
 
 pub mod common;
+pub mod classify;
 pub mod obsolete;
 
 
@@ -278,7 +279,11 @@ mod tests {
   }
 
   #[test] fn items_1() {
-    let x = string_to_item("fn a (b : i32) { b; }".to_string());
+    let x = string_to_item("fn xyz() { }".to_string());
+  }
+
+  #[test] fn items_2() {
+    let x = string_to_item("fn xyz(x: i32) { }".to_string());
   }
 
   #[test]

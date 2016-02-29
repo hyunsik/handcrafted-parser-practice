@@ -148,7 +148,7 @@ pub struct Path {
     /// module (like paths in an import).
     pub global: bool,
     /// The segments in the path: the things separated by `::`.
-    pub segments: Vec<Ident>,
+    pub segments: Vec<PathSegment>,
 }
 
 /*
@@ -163,6 +163,110 @@ impl fmt::Display for Path {
         write!(f, "{}", pprust::path_to_string(self))
     }
 }*/
+
+/// A segment of a path: an identifier, an optional lifetime, and a set of
+/// types.
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
+pub struct PathSegment {
+    /// The identifier portion of this path segment.
+    pub identifier: Ident,
+
+    /// Type/lifetime parameters attached to this path. They come in
+    /// two flavors: `Path<A,B,C>` and `Path(A,B) -> C`. Note that
+    /// this is more than just simple syntactic sugar; the use of
+    /// parens affects the region binding rules, so we preserve the
+    /// distinction.
+    pub parameters: PathParameters,
+}
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
+pub enum PathParameters {
+    /// The `<'a, A,B,C>` in `foo::bar::baz::<'a, A,B,C>`
+    AngleBracketed(AngleBracketedParameterData),
+    /// The `(A,B)` and `C` in `Foo(A,B) -> C`
+    Parenthesized(ParenthesizedParameterData),
+}
+
+impl PathParameters {
+    pub fn none() -> PathParameters {
+        PathParameters::AngleBracketed(AngleBracketedParameterData {
+            types: P::empty(),
+            bindings: P::empty(),
+        })
+    }
+
+    pub fn is_empty(&self) -> bool {
+        match *self {
+            PathParameters::AngleBracketed(ref data) => data.is_empty(),
+
+            // Even if the user supplied no types, something like
+            // `X()` is equivalent to `X<(),()>`.
+            PathParameters::Parenthesized(..) => false,
+        }
+    }
+
+    pub fn has_types(&self) -> bool {
+        match *self {
+            PathParameters::AngleBracketed(ref data) => !data.types.is_empty(),
+            PathParameters::Parenthesized(..) => true,
+        }
+    }
+
+    /// Returns the types that the user wrote. Note that these do not necessarily map to the type
+    /// parameters in the parenthesized case.
+    pub fn types(&self) -> Vec<&P<Ty>> {
+        match *self {
+            PathParameters::AngleBracketed(ref data) => {
+                data.types.iter().collect()
+            }
+            PathParameters::Parenthesized(ref data) => {
+                data.inputs.iter()
+                    .chain(data.output.iter())
+                    .collect()
+            }
+        }
+    }
+
+    pub fn bindings(&self) -> Vec<&TypeBinding> {
+        match *self {
+            PathParameters::AngleBracketed(ref data) => {
+                data.bindings.iter().collect()
+            }
+            PathParameters::Parenthesized(_) => {
+                Vec::new()
+            }
+        }
+    }
+}
+
+/// A path like `Foo<'a, T>`
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
+pub struct AngleBracketedParameterData {
+    /// The type parameters for this path segment, if present.
+    pub types: P<[P<Ty>]>,
+    /// Bindings (equality constraints) on associated types, if present.
+    /// e.g., `Foo<A=Bar>`.
+    pub bindings: P<[TypeBinding]>,
+}
+
+impl AngleBracketedParameterData {
+    fn is_empty(&self) -> bool {
+        self.types.is_empty() && self.bindings.is_empty()
+    }
+}
+
+/// A path like `Foo(A,B) -> C`
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
+pub struct ParenthesizedParameterData {
+    /// Overall span
+    pub span: Span,
+
+    /// `(A,B)`
+    pub inputs: Vec<P<Ty>>,
+
+    /// `C`
+    pub output: Option<P<Ty>>,
+}
 
 pub type CrateNum = u32;
 
@@ -303,14 +407,76 @@ pub struct Block {
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
 pub struct Pat {
     pub id: NodeId,
-    pub node: Pat_,
+    pub node: PatKind,
     pub span: Span,
 }
 
+/// A single field in a struct pattern
+///
+/// Patterns like the fields of Foo `{ x, ref y, ref mut z }`
+/// are treated the same as` x: x, y: ref y, z: ref mut z`,
+/// except is_shorthand is true
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
-pub enum Pat_ {
+pub struct FieldPat {
+    /// The identifier for the field
+    pub ident: Ident,
+    /// The pattern the field is destructured to
+    pub pat: P<Pat>,
+    pub is_shorthand: bool,
+}
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Copy)]
+pub enum BindingMode {
+    ByRef(Mutability),
+    ByValue(Mutability),
+}
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
+pub enum PatKind {
   /// Represents a wildcard pattern (`_`)
-  PatWild,
+  Wild,
+
+  /// A `PatKind::Ident` may either be a new bound variable,
+  /// or a unit struct/variant pattern, or a const pattern (in the last two cases
+  /// the third field must be `None`).
+  ///
+  /// In the unit or const pattern case, the parser can't determine
+  /// which it is. The resolver determines this, and
+  /// records this pattern's `NodeId` in an auxiliary
+  /// set (of "PatIdents that refer to unit patterns or constants").
+  Ident(BindingMode, SpannedIdent, Option<P<Pat>>),
+
+  /// A struct or struct variant pattern, e.g. `Variant {x, y, ..}`.
+  /// The `bool` is `true` in the presence of a `..`.
+  Struct(Path, Vec<Spanned<FieldPat>>, bool),
+
+  /// A tuple struct/variant pattern `Variant(x, y, z)`.
+  /// "None" means a `Variant(..)` pattern where we don't bind the fields to names.
+  TupleStruct(Path, Option<Vec<P<Pat>>>),
+
+  /// A path pattern.
+  /// Such pattern can be resolved to a unit struct/variant or a constant.
+  Path(Path),
+
+  /// An associated const named using the qualified path `<T>::CONST` or
+  /// `<T as Trait>::CONST`. Associated consts from inherent impls can be
+  /// referred to as simply `T::CONST`, in which case they will end up as
+  /// PatKind::Path, and the resolver will have to sort that out.
+  QPath(QSelf, Path),
+
+  /// A tuple pattern `(a, b)`
+  Tup(Vec<P<Pat>>),
+  /// A `box` pattern
+  Box(P<Pat>),
+  /// A reference pattern, e.g. `&mut (a, b)`
+  Ref(P<Pat>, Mutability),
+  /// A literal
+  Lit(P<Expr>),
+  /// A range pattern, e.g. `1...2`
+  Range(P<Expr>, P<Expr>),
+  /// `[a, b, ..i, y, z]` is represented as:
+  ///     `PatKind::Vec(box [a, b], Some(i), box [y, z])`
+  Vec(Vec<P<Pat>>, Option<P<Pat>>, Vec<P<Pat>>),
 }
 
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug, Copy)]
@@ -535,6 +701,16 @@ pub struct Expr {
     pub id: NodeId,
     pub node: ExprKind,
     pub span: Span,
+    pub attrs: ThinAttributes
+}
+
+impl Expr {
+    pub fn attrs(&self) -> &[Attribute] {
+        match self.attrs {
+            Some(ref b) => b,
+            None => &[],
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash,)]
@@ -561,10 +737,22 @@ pub enum ExprKind {
   ///
   /// `if expr { block } else { expr }`
   If(P<Expr>, P<Block>, Option<P<Expr>>),
+  /// An `if let` expression with an optional else block
+  ///
+  /// `if let pat = expr { block } else { expr }`
+  ///
+  /// This is desugared to a `match` expression.
+  IfLet(P<Pat>, P<Expr>, P<Block>, Option<P<Expr>>),
   /// A while loop, with an optional label
   ///
   /// `'label: while expr { block }`
   While(P<Expr>, P<Block>, Option<Ident>),
+  /// A while-let loop, with an optional label
+  ///
+  /// `'label: while let pat = expr { block }`
+  ///
+  /// This is desugared to a combination of `loop` and `match` expressions.
+  WhileLet(P<Pat>, P<Expr>, P<Block>, Option<Ident>),
   /// A for loop, with an optional label
   ///
   /// `'label: for pat in expr { block }`
@@ -1020,6 +1208,15 @@ impl FloatTy {
     }
 }
 
+// Bind a type to an associated type: `A=Foo`.
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash,)]
+pub struct TypeBinding {
+    pub id: NodeId,
+    pub ident: Ident,
+    pub ty: P<Ty>,
+    pub span: Span,
+}
+
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
 pub struct Ty {
     pub id: NodeId,
@@ -1063,6 +1260,7 @@ pub enum TyKind {
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
 pub struct Arg {
     pub ty: P<Ty>,
+    pub pat: P<Pat>,
     pub id: NodeId,
 }
 
@@ -1128,6 +1326,28 @@ pub struct Mod {
     pub inner: Span,
     pub items: Vec<P<Item>>,
 }
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash,)]
+pub struct ForeignMod {
+    pub abi: Abi,
+    pub items: Vec<ForeignItem>,
+}
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash,)]
+pub struct EnumDef {
+  pub variants: Vec<Variant>,
+}
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash,)]
+pub struct Variant_ {
+    pub name: Ident,
+    pub attrs: Vec<Attribute>,
+    pub data: VariantData,
+    /// Explicit discriminant, eg `Foo = 1`
+    pub disr_expr: Option<P<Expr>>,
+}
+
+pub type Variant = Spanned<Variant_>;
 
 /// Meta-data associated with an item
 pub type Attribute = Spanned<Attribute_>;
@@ -1275,6 +1495,47 @@ impl Item {
 
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
 pub enum ItemKind {
+  /// An`extern crate` item, with optional original crate name,
+  ///
+  /// e.g. `extern crate foo` or `extern crate foo_bar as foo`
+  ExternCrate(Option<Name>),
+  /// A `use` or `pub use` item
+  //Use(P<ViewPath>),
+
+  /// A `static` item
+  Static(P<Ty>, Mutability, P<Expr>),
+  /// A `const` item
+  Const(P<Ty>, P<Expr>),
+  /// A function declaration
+  Fn(P<FnDecl>, Unsafety, Constness, Abi, Generics, P<Block>),
+  /// A module
+  Mod(Mod),
+  /// An external module
+  ForeignMod(ForeignMod),
   /// A type alias, e.g. `type Foo = Bar<u8>`
   Ty(P<Ty>, Generics),
+  /// An enum definition, e.g. `enum Foo<A, B> {C<A>, D<B>}`
+  Enum(EnumDef, Generics),
+  /// A struct definition, e.g. `struct Foo<A> {x: A}`
+  Struct(VariantData, Generics),
+}
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
+pub struct ForeignItem {
+    pub ident: Ident,
+    pub attrs: Vec<Attribute>,
+    pub node: ForeignItemKind,
+    pub id: NodeId,
+    pub span: Span,
+    pub vis: Visibility,
+}
+
+/// An item within an `extern` block
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
+pub enum ForeignItemKind {
+    /// A foreign function
+    Fn(P<FnDecl>, Generics),
+    /// A foreign static item (`static ext: u8`), with optional mutability
+    /// (the boolean is true when mutable)
+    Static(P<Ty>, bool),
 }

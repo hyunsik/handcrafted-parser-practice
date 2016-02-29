@@ -1,5 +1,5 @@
 use std::cell::{Cell, RefCell};
-use std::{fmt, fs};
+use std::{cmp, fmt, fs};
 use std::io::{self,Read};
 use std::ops::{Add, Sub};
 use std::path::Path;
@@ -13,7 +13,7 @@ pub trait Pos {
 
 /// A byte offset. Keep this small (currently 32-bits), as AST contains
 /// a lot of them.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
 pub struct BytePos(pub u32);
 
 /// A character offset. Because of multibyte utf8 characters, a byte offset
@@ -88,7 +88,7 @@ impl Sub for CharPos {
 /// able to use many of the functions on spans in codemap and you cannot assume
 /// that the length of the span = hi - lo; there may be space in the BytePos
 /// range between files.
-#[derive(Clone, Copy, Hash)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq)]
 pub struct Span {
   pub lo: BytePos,
   pub hi: BytePos
@@ -106,16 +106,48 @@ pub struct MultiSpan {
 pub const DUMMY_SP: Span = Span { lo: BytePos(0), hi: BytePos(0) };
 
 // Generic span to be used for code originating from the command line
-pub const COMMAND_LINE_SP: Span = Span { lo: BytePos(0), hi: BytePos(0)};
+pub const COMMAND_LINE_SP: Span = Span { lo: BytePos(0), hi: BytePos(0) };
 
-impl PartialEq for Span {
-  fn eq(&self, other: &Span) -> bool {
-    return (*self).lo == (*other).lo && (*self).hi == (*other).hi;
-  }
-  fn ne(&self, other: &Span) -> bool { !(*self).eq(other) }
+impl Span {
+    /// Returns `self` if `self` is not the dummy span, and `other` otherwise.
+    pub fn substitute_dummy(self, other: Span) -> Span {
+        if self.source_equal(&DUMMY_SP) { other } else { self }
+    }
+
+    pub fn contains(self, other: Span) -> bool {
+        self.lo <= other.lo && other.hi <= self.hi
+    }
+
+    /// Return true if the spans are equal with regards to the source text.
+    ///
+    /// Use this instead of `==` when either span could be generated code,
+    /// and you only care that they point to the same bytes of source text.
+    pub fn source_equal(&self, other: &Span) -> bool {
+        self.lo == other.lo && self.hi == other.hi
+    }
+
+    /// Returns `Some(span)`, a union of `self` and `other`, on overlap.
+    pub fn merge(self, other: Span) -> Option<Span> {
+        if (self.lo <= other.lo && self.hi > other.lo) ||
+           (self.lo >= other.lo && self.lo < other.hi) {
+            Some(Span {
+                lo: cmp::min(self.lo, other.lo),
+                hi: cmp::max(self.hi, other.hi),
+            })
+        } else {
+            None
+        }
+    }
+
+    /// Returns `Some(span)`, where the start is trimmed by the end of `other`
+    pub fn trim_start(self, other: Span) -> Option<Span> {
+        if self.hi > other.hi {
+            Some(Span { lo: cmp::max(self.lo, other.hi), .. self })
+        } else {
+            None
+        }
+    }
 }
-
-impl Eq for Span {}
 
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug, Copy)]
 pub struct Spanned<T> {
@@ -236,6 +268,23 @@ pub struct FileMapAndBytePos { pub fm: Rc<FileMap>, pub pos: BytePos }
 
 pub type FileName = String;
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct LineInfo {
+    /// Index of line, starting from 0.
+    pub line_index: usize,
+
+    /// Column in line where span begins, starting from 0.
+    pub start_col: CharPos,
+
+    /// Column in line where span ends, starting from 0, exclusive.
+    pub end_col: CharPos,
+}
+
+pub struct FileLines {
+    pub file: Rc<FileMap>,
+    pub lines: Vec<LineInfo>
+}
+
 /// Identifies an offset of a multi-byte character in a FileMap
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub struct MultiByteChar {
@@ -304,6 +353,10 @@ impl FileMap {
         }
     }
 }
+
+// _____________________________________________________________________________
+// CodeMap
+//
 
 pub struct CodeMap {
   pub files: RefCell<Vec<Rc<FileMap>>>,
@@ -454,6 +507,63 @@ impl CodeMap {
         }
     }
 
+    pub fn span_to_string(&self, sp: Span) -> String {
+        if self.files.borrow().is_empty() && sp.source_equal(&DUMMY_SP) {
+            return "no-location".to_string();
+        }
+
+        let lo = self.lookup_char_pos_adj(sp.lo);
+        let hi = self.lookup_char_pos_adj(sp.hi);
+        return (format!("{}:{}:{}: {}:{}",
+                        lo.filename,
+                        lo.line,
+                        lo.col.to_usize() + 1,
+                        hi.line,
+                        hi.col.to_usize() + 1)).to_string()
+    }
+
+    pub fn span_to_lines(&self, sp: Span) -> FileLinesResult {
+        if sp.lo > sp.hi {
+            return Err(SpanLinesError::IllFormedSpan(sp));
+        }
+
+        let lo = self.lookup_char_pos(sp.lo);
+        let hi = self.lookup_char_pos(sp.hi);
+
+        if lo.file.start_pos != hi.file.start_pos {
+            return Err(SpanLinesError::DistinctSources(DistinctSources {
+                begin: (lo.file.name.clone(), lo.file.start_pos),
+                end: (hi.file.name.clone(), hi.file.start_pos),
+            }));
+        }
+        assert!(hi.line >= lo.line);
+
+        let mut lines = Vec::with_capacity(hi.line - lo.line + 1);
+
+        // The span starts partway through the first line,
+        // but after that it starts from offset 0.
+        let mut start_col = lo.col;
+
+        // For every line but the last, it extends from `start_col`
+        // and to the end of the line. Be careful because the line
+        // numbers in Loc are 1-based, so we subtract 1 to get 0-based
+        // lines.
+        for line_index in lo.line-1 .. hi.line-1 {
+            let line_len = lo.file.get_line(line_index).map(|s| s.len()).unwrap_or(0);
+            lines.push(LineInfo { line_index: line_index,
+                                  start_col: start_col,
+                                  end_col: CharPos::from_usize(line_len) });
+            start_col = CharPos::from_usize(0);
+        }
+
+        // For the last line, it extends from `start_col` to `hi.col`:
+        lines.push(LineInfo { line_index: hi.line - 1,
+                              start_col: start_col,
+                              end_col: hi.col });
+
+        Ok(FileLines {file: lo.file, lines: lines})
+    }
+
     /// Converts an absolute BytePos to a CharPos relative to the filemap.
     pub fn bytepos_to_file_charpos(&self, bpos: BytePos) -> CharPos {
         let idx = self.lookup_filemap_idx(bpos);
@@ -527,6 +637,40 @@ impl FileLoader for RealFileLoader {
         try!(try!(fs::File::open(path)).read_to_string(&mut src));
         Ok(src)
     }
+}
+
+// _____________________________________________________________________________
+// SpanLinesError, SpanSnippetError, DistinctSources, MalformedCodemapPositions
+//
+
+pub type FileLinesResult = Result<FileLines, SpanLinesError>;
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum SpanLinesError {
+    IllFormedSpan(Span),
+    DistinctSources(DistinctSources),
+}
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum SpanSnippetError {
+    IllFormedSpan(Span),
+    DistinctSources(DistinctSources),
+    MalformedForCodemap(MalformedCodemapPositions),
+    SourceNotAvailable { filename: String }
+}
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct DistinctSources {
+    begin: (String, BytePos),
+    end: (String, BytePos)
+}
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct MalformedCodemapPositions {
+    name: String,
+    source_len: usize,
+    begin_pos: BytePos,
+    end_pos: BytePos
 }
 
 // _____________________________________________________________________________
