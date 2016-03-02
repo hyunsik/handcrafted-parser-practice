@@ -1,5 +1,8 @@
 pub use self::StructFieldKind::*;
+pub use self::TyParamBound::*;
 pub use self::UnsafeSource::*;
+pub use self::ViewPath_::*;
+pub use self::PathParameters::*;
 
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -205,6 +208,7 @@ pub enum PathParameters {
 impl PathParameters {
     pub fn none() -> PathParameters {
         PathParameters::AngleBracketed(AngleBracketedParameterData {
+            lifetimes: Vec::new(),
             types: P::empty(),
             bindings: P::empty(),
         })
@@ -255,8 +259,10 @@ impl PathParameters {
 }
 
 /// A path like `Foo<'a, T>`
-#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash,)]
 pub struct AngleBracketedParameterData {
+    /// The lifetime parameters for this path segment.
+    pub lifetimes: Vec<Lifetime>,
     /// The type parameters for this path segment, if present.
     pub types: P<[P<Ty>]>,
     /// Bindings (equality constraints) on associated types, if present.
@@ -300,34 +306,60 @@ pub trait NodeIdAssigner {
     fn peek_node_id(&self) -> NodeId;
 }
 
+/// The AST represents all type param bounds as types.
+/// typeck::collect::compute_bounds matches these against
+/// the "special" built-in traits (see middle::lang_items) and
+/// detects Copy, Send and Sync.
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash,)]
+pub enum TyParamBound {
+    TraitTyParamBound(PolyTraitRef, TraitBoundModifier),
+    RegionTyParamBound(Lifetime)
+}
+
+pub type TyParamBounds = P<[TyParamBound]>;
+
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
 pub struct TyParam {
     pub ident: Ident,
     pub id: NodeId,
+    pub bounds: TyParamBounds,
     pub default: Option<P<Ty>>,
     pub span: Span
+}
+
+/// A modifier on a bound, currently this is only used for `?Sized`, where the
+/// modifier is `Maybe`. Negative bounds should also be handled here.
+#[derive(Copy, Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug)]
+pub enum TraitBoundModifier {
+    None,
+    Maybe,
 }
 
 /// Represents lifetimes and type parameters attached to a declaration
 /// of a function, enum, trait, etc.
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
 pub struct Generics {
-    pub ty_params: P<[TyParam]>,
-    pub where_clause: WhereClause,
+  pub lifetimes: Vec<LifetimeDef>,
+  pub ty_params: P<[TyParam]>,
+  pub where_clause: WhereClause,
 }
 
 impl Generics {
+    pub fn is_lt_parameterized(&self) -> bool {
+        !self.lifetimes.is_empty()
+    }
     pub fn is_type_parameterized(&self) -> bool {
         !self.ty_params.is_empty()
     }
     pub fn is_parameterized(&self) -> bool {
-        self.is_type_parameterized()
+        self.is_lt_parameterized() || self.is_type_parameterized()
     }
 }
 
 impl Default for Generics {
     fn default() ->  Generics {
         Generics {
+          lifetimes: Vec::new(),
             ty_params: P::empty(),
             where_clause: WhereClause {
                 id: DUMMY_NODE_ID,
@@ -345,18 +377,43 @@ pub struct WhereClause {
 }
 
 /// A single predicate in a `where` clause
-#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, )]
 pub enum WherePredicate {
     /// A type binding, e.g. `for<'c> Foo: Send+Clone+'c`
     BoundPredicate(WhereBoundPredicate),
+    /// A lifetime predicate, e.g. `'a: 'b+'c`
+    RegionPredicate(WhereRegionPredicate),
+    /// An equality predicate (unsupported)
+    EqPredicate(WhereEqPredicate),
 }
 
 /// A type bound, e.g. `for<'c> Foo: Send+Clone+'c`
-#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, )]
 pub struct WhereBoundPredicate {
     pub span: Span,
+    /// Any lifetimes from a `for` binding
+    pub bound_lifetimes: Vec<LifetimeDef>,
     /// The type being bounded
     pub bounded_ty: P<Ty>,
+    /// Trait and lifetime bounds (`Clone+Send+'static`)
+    pub bounds: TyParamBounds,
+}
+
+/// A lifetime predicate, e.g. `'a: 'b+'c`
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, )]
+pub struct WhereRegionPredicate {
+    pub span: Span,
+    pub lifetime: Lifetime,
+    pub bounds: Vec<Lifetime>,
+}
+
+/// An equality predicate (unsupported), e.g. `T=int`
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, )]
+pub struct WhereEqPredicate {
+    pub id: NodeId,
+    pub span: Span,
+    pub path: Path,
+    pub ty: P<Ty>,
 }
 
 /// The set of MetaItems that define the compilation environment of the crate,
@@ -1089,6 +1146,63 @@ impl LitKind {
     }
 }
 
+// NB: If you change this, you'll probably want to change the corresponding
+// type structure in middle/ty.rs as well.
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash,)]
+pub struct MutTy {
+    pub ty: P<Ty>,
+    pub mutbl: Mutability,
+}
+
+/// Represents a method's signature in a trait declaration,
+/// or in an implementation.
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash,)]
+pub struct MethodSig {
+    pub unsafety: Unsafety,
+    pub constness: Constness,
+    pub abi: Abi,
+    pub decl: P<FnDecl>,
+    pub generics: Generics,
+    pub explicit_self: ExplicitSelf,
+}
+
+/// Represents a method declaration in a trait declaration, possibly including
+/// a default implementation. A trait method is either required (meaning it
+/// doesn't have an implementation, just a signature) or provided (meaning it
+/// has a default implementation).
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash,)]
+pub struct TraitItem {
+    pub id: NodeId,
+    pub ident: Ident,
+    pub attrs: Vec<Attribute>,
+    pub node: TraitItemKind,
+    pub span: Span,
+}
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash,)]
+pub enum TraitItemKind {
+    Const(P<Ty>, Option<P<Expr>>),
+    Method(MethodSig, Option<P<Block>>),
+    Type(TyParamBounds, Option<P<Ty>>),
+}
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash,)]
+pub struct ImplItem {
+    pub id: NodeId,
+    pub ident: Ident,
+    pub vis: Visibility,
+    pub attrs: Vec<Attribute>,
+    pub node: ImplItemKind,
+    pub span: Span,
+}
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash,)]
+pub enum ImplItemKind {
+    Const(P<Ty>, P<Expr>),
+    Method(MethodSig, P<Block>),
+    Type(P<Ty>),
+}
+
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Copy)]
 pub enum IntTy {
     Is,
@@ -1268,9 +1382,9 @@ pub enum TyKind {
     /// A fixed length array (`[T; n]`)
     FixedLengthVec(P<Ty>, P<Expr>),
     /// A raw pointer (`*const T` or `*mut T`)
-    Ptr(P<Ty>),
+    Ptr(MutTy),
     /// A reference (`&'a T` or `&'a mut T`)
-    Rptr(P<Ty>),
+    Rptr(Option<Lifetime>, MutTy),
     /// A bare function (e.g. `fn(usize) -> bool`)
     BareFn(P<BareFnTy>),
     /// A tuple (`(A, B, C, D,...)`)
@@ -1282,6 +1396,8 @@ pub enum TyKind {
     Path(Option<QSelf>, Path),
     /// No-op; kept solely so that we can pretty-print faithfully
     Paren(P<Ty>),
+    /// Type of
+    Typeof(P<Expr>),
     /// TyKind::Infer means the type should be inferred instead of it having been
     /// specified. This can appear anywhere in a type.
     Infer
@@ -1303,6 +1419,21 @@ pub struct FnDecl {
     pub variadic: bool
 }
 
+/// Represents the kind of 'self' associated with a method
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash,)]
+pub enum SelfKind {
+    /// No self
+    Static,
+    /// `self`
+    Value(Ident),
+    /// `&'lt self`, `&'lt mut self`
+    Region(Option<Lifetime>, Mutability, Ident),
+    /// `self: TYPE`
+    Explicit(P<Ty>, Ident),
+}
+
+pub type ExplicitSelf = Spanned<SelfKind>;
+
 #[derive(Copy, Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash,)]
 pub enum Unsafety {
     Unsafe,
@@ -1321,6 +1452,23 @@ impl fmt::Display for Unsafety {
             Unsafety::Normal => "normal",
             Unsafety::Unsafe => "unsafe",
         }, f)
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
+pub enum ImplPolarity {
+    /// `impl Trait for Type`
+    Positive,
+    /// `impl !Trait for Type`
+    Negative,
+}
+
+impl fmt::Debug for ImplPolarity {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            ImplPolarity::Positive => "positive".fmt(f),
+            ImplPolarity::Negative => "negative".fmt(f),
+        }
     }
 }
 
@@ -1379,6 +1527,63 @@ pub struct Variant_ {
 }
 
 pub type Variant = Spanned<Variant_>;
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug, Copy)]
+pub enum PathListItemKind {
+    Ident {
+        name: Ident,
+        /// renamed in list, eg `use foo::{bar as baz};`
+        rename: Option<Ident>,
+        id: NodeId
+    },
+    Mod {
+        /// renamed in list, eg `use foo::{self as baz};`
+        rename: Option<Ident>,
+        id: NodeId
+    }
+}
+
+impl PathListItemKind {
+    pub fn id(&self) -> NodeId {
+        match *self {
+            PathListItemKind::Ident { id, .. } | PathListItemKind::Mod { id, .. } => id
+        }
+    }
+
+    pub fn name(&self) -> Option<Ident> {
+        match *self {
+            PathListItemKind::Ident { name, .. } => Some(name),
+            PathListItemKind::Mod { .. } => None,
+        }
+    }
+
+    pub fn rename(&self) -> Option<Ident> {
+        match *self {
+            PathListItemKind::Ident { rename, .. } | PathListItemKind::Mod { rename, .. } => rename
+        }
+    }
+}
+
+pub type ViewPath = Spanned<ViewPath_>;
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, )]
+pub enum ViewPath_ {
+
+    /// `foo::bar::baz as quux`
+    ///
+    /// or just
+    ///
+    /// `foo::bar::baz` (with `as baz` implicitly on the right)
+    ViewPathSimple(Ident, Path),
+
+    /// `foo::bar::*`
+    ViewPathGlob(Path),
+
+    /// `foo::bar::{a,b,c}`
+    ViewPathList(Path, Vec<PathListItem>)
+}
+
+pub type PathListItem = Spanned<PathListItemKind>;
 
 /// Meta-data associated with an item
 pub type Attribute = Spanned<Attribute_>;
@@ -1531,7 +1736,7 @@ pub enum ItemKind {
   /// e.g. `extern crate foo` or `extern crate foo_bar as foo`
   ExternCrate(Option<Name>),
   /// A `use` or `pub use` item
-  //Use(P<ViewPath>),
+  Use(P<ViewPath>),
 
   /// A `static` item
   Static(P<Ty>, Mutability, P<Expr>),
@@ -1549,6 +1754,23 @@ pub enum ItemKind {
   Enum(EnumDef, Generics),
   /// A struct definition, e.g. `struct Foo<A> {x: A}`
   Struct(VariantData, Generics),
+  /// Represents a Trait Declaration
+  Trait(Unsafety,
+            Generics,
+            TyParamBounds,
+            Vec<TraitItem>),
+
+  // Default trait implementations
+  ///
+  // `impl Trait for .. {}`
+  DefaultImpl(Unsafety, TraitRef),
+  /// An implementation, eg `impl<A> Trait for Foo { .. }`
+  Impl(Unsafety,
+           ImplPolarity,
+           Generics,
+           Option<TraitRef>, // (optional) trait this impl implements
+           P<Ty>, // self
+           Vec<ImplItem>),
 }
 
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash)]
