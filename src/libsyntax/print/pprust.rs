@@ -101,25 +101,6 @@ pub fn print_crate<'a>(cm: &'a CodeMap,
                                       out,
                                       ann,
                                       is_expanded);
-    if is_expanded && !std_inject::no_std(krate) {
-        // We need to print `#![no_std]` (and its feature gate) so that
-        // compiling pretty-printed source won't inject libstd again.
-        // However we don't want these attributes in the AST because
-        // of the feature gate, so we fake them up here.
-
-        // #![feature(prelude_import)]
-        let prelude_import_meta = attr::mk_word_item(InternedString::new("prelude_import"));
-        let list = attr::mk_list_item(InternedString::new("feature"),
-                                      vec![prelude_import_meta]);
-        let fake_attr = attr::mk_attr_inner(attr::mk_attr_id(), list);
-        try!(s.print_attribute(&fake_attr));
-
-        // #![no_std]
-        let no_std_meta = attr::mk_word_item(InternedString::new("no_std"));
-        let fake_attr = attr::mk_attr_inner(attr::mk_attr_id(), no_std_meta);
-        try!(s.print_attribute(&fake_attr));
-    }
-
     try!(s.print_mod(&krate.module, &krate.attrs));
     try!(s.print_remaining_comments());
     eof(&mut s.s)

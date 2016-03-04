@@ -1372,6 +1372,7 @@ pub struct Ty {
 pub struct BareFnTy {
   pub unsafety: Unsafety,
   pub abi: Abi,
+  pub lifetimes: Vec<LifetimeDef>,
   pub decl: P<FnDecl>
 }
 
@@ -1607,6 +1608,29 @@ pub struct Attribute_ {
     pub style: AttrStyle,
     pub value: P<MetaItem>,
     pub is_sugared_doc: bool,
+}
+
+/// TraitRef's appear in impls.
+///
+/// resolve maps each TraitRef's ref_id to its defining trait; that's all
+/// that the ref_id is for. The impl_id maps to the "self type" of this impl.
+/// If this impl is an ItemKind::Impl, the impl_id is redundant (it could be the
+/// same as the impl's node id).
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, )]
+pub struct TraitRef {
+    pub path: Path,
+    pub ref_id: NodeId,
+}
+
+#[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, )]
+pub struct PolyTraitRef {
+    /// The `'a` in `<'a> Foo<&'a T>`
+    pub bound_lifetimes: Vec<LifetimeDef>,
+
+    /// The `Foo<&'a T>` in `<'a> Foo<&'a T>`
+    pub trait_ref: TraitRef,
+
+    pub span: Span,
 }
 
 #[derive(Clone, PartialEq, Eq, RustcEncodable, RustcDecodable, Hash, Debug, Copy)]

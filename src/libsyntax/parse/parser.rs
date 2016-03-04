@@ -913,6 +913,7 @@ impl<'a> Parser<'a> {
         Ok(TyKind::BareFn(P(BareFnTy {
             abi: abi,
             unsafety: unsafety,
+            lifetimes: lifetime_defs,
             decl: decl
         })))
     }
