@@ -14,7 +14,7 @@ use ast;
 use util::interner::{self, StrInterner, RcStr};
 
 #[allow(non_camel_case_types)]
-#[derive(Clone, PartialEq, Eq, Hash, Debug, Copy)]
+#[derive(Clone, RustcEncodable, RustcDecodable, PartialEq, Eq, Hash, Debug, Copy)]
 pub enum BinOpToken {
   Plus,
   Minus,
@@ -29,7 +29,7 @@ pub enum BinOpToken {
 }
 
 /// A delimiter token
-#[derive(Clone, PartialEq, Eq, Hash, Debug, Copy)]
+#[derive(Clone, RustcEncodable, RustcDecodable, PartialEq, Eq, Hash, Debug, Copy)]
 pub enum DelimToken {
     /// A round parenthesis: `(` or `)`
     Paren,
@@ -39,14 +39,14 @@ pub enum DelimToken {
     Brace,
 }
 
-#[derive(Clone, PartialEq, Eq, Hash, Debug, Copy)]
+#[derive(Clone, RustcEncodable, RustcDecodable, PartialEq, Eq, Hash, Debug, Copy)]
 pub enum IdentStyle {
   /// `::` follows the identifier with no whitespace in-between.
   ModName,
   Plain,
 }
 
-#[derive(Clone, PartialEq, Eq, Hash, Debug, Copy)]
+#[derive(Clone, RustcEncodable, RustcDecodable, PartialEq, Eq, Hash, Debug, Copy)]
 pub enum Lit {
   Byte(ast::Name),
   Char(ast::Name),
@@ -72,7 +72,7 @@ impl Lit {
 }
 
 #[allow(non_camel_case_types)]
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, RustcEncodable, RustcDecodable, PartialEq, Eq, Hash, Debug)]
 pub enum Token {
     /* Expression-operator symbols. */
     Eq,
