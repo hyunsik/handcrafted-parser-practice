@@ -662,7 +662,7 @@ pub fn integer_lit(s: &str,
 #[cfg(test)]
 mod tests {
   use super::*;
-  use ast::{self, TokenTree};
+  use ast::{self, TokenTree, Item};
   use parse::token::{Token, str_to_ident};
   use codemap::{Span, BytePos, Pos};
   use util::parser_testing::{string_to_expr, string_to_tts, string_to_item};
@@ -681,7 +681,13 @@ mod tests {
   }
 
   #[test] fn items_2() {
-    let x = string_to_item("fn xyz(x: i32) { }".to_string());
+    let x = string_to_item("fn xyz(x: i32) { }".to_string()).unwrap();
+    println!("{:?}", x);
+  }
+
+  #[test] fn items_3() {
+    let x = string_to_item("fn xyz(x: i32) -> i32 { x }".to_string()).unwrap();
+    println!("{:?}", x);
   }
 
   #[test] fn expr1() {

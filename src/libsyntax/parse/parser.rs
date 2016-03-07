@@ -1482,7 +1482,7 @@ impl<'a> Parser<'a> {
                         !self.check_keyword(keywords::True) &&
                         !self.check_keyword(keywords::False) {
                     let pth =
-                        try!(self.parse_path(LifetimeAndTypesWithColons));
+                        try!(self.parse_path(NoTypesAllowed));
 
                     if self.check(&token::OpenDelim(token::Brace)) {
                         // This is a struct literal, unless we're prohibited
@@ -2600,7 +2600,6 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_stmt_without_recovery(&mut self) -> PResult<'a, Option<Stmt>> {
-
         let attrs = try!(self.parse_outer_attributes());
         let lo = self.span.lo;
 
@@ -2664,19 +2663,10 @@ impl<'a> Parser<'a> {
 
     /// Parse a block. Inner attrs are allowed.
     fn parse_inner_attrs_and_block(&mut self) -> PResult<'a, (Vec<Attribute>, P<Block>)> {
-      println!("Enter parse_inner_attrs_and_block");
         let lo = self.span.lo;
         try!(self.expect(&token::OpenDelim(token::Brace)));
-        println!("after self.expect");
-
-        let attrs = try!(self.parse_inner_attributes());
-        println!("after parse_inner_attributes");
-        let block_tail = try!(self.parse_block_tail(lo, BlockCheckMode::Default));
-        println!("after parse_block_tail");
-        /*
         Ok((try!(self.parse_inner_attributes()),
-            try!(self.parse_block_tail(lo, BlockCheckMode::Default))))*/
-        Ok((attrs, block_tail))
+            try!(self.parse_block_tail(lo, BlockCheckMode::Default))))
     }
 
     /// Parse the rest of a block expression or function body
@@ -3067,18 +3057,22 @@ impl<'a> Parser<'a> {
 
       if self.eat_keyword(keywords::Use) {
         println!("Keyword: Use");
+        unimplemented!()
       }
 
       if self.eat_keyword(keywords::Extern) {
         println!("Keyword: Extern");
+        unimplemented!()
       }
 
       if self.eat_keyword(keywords::Static) {
         println!("Keyword: Static");
+        unimplemented!()
       }
 
       if self.eat_keyword(keywords::Const) {
         println!("Keyword: Const");
+        unimplemented!()
       }
 
       if self.check_keyword(keywords::Fn) {
@@ -3099,21 +3093,25 @@ impl<'a> Parser<'a> {
 
       if self.eat_keyword(keywords::Mod) {
         println!("Keyword: Mod");
+        unimplemented!()
       }
 
       if self.eat_keyword(keywords::Type) {
         println!("Keyword: Type");
+        unimplemented!()
       }
 
       if self.eat_keyword(keywords::Enum) {
         println!("Keyword: Enum");
+        unimplemented!()
       }
 
       if self.eat_keyword(keywords::Struct) {
         println!("Keyword: Struct");
+        unimplemented!()
       }
 
-      unimplemented!()
+      Ok(None)
     }
 
     pub fn parse_item(&mut self) -> PResult<'a, Option<P<Item>>> {
