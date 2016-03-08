@@ -475,7 +475,7 @@ declare_special_idents_and_keywords! {
         (35,                         Trait,      "trait");
         (36,                         Type,       "type");
         (37,                         Unsafe,     "unsafe");
-        (38,                         Use,        "use");
+        (38,                         Import,     "import");
         (39,                         While,      "while");
         (40,                         Continue,   "continue");
         (41,                         Box,        "box");

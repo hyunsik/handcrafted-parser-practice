@@ -16,7 +16,10 @@ use ast::Local;
 use ast::{Delimited, SequenceRepetition, TokenTree};
 use ast::{BindingMode, Mutability, Pat, PatKind};
 use ast::{Stmt, StmtKind};
-use ast::{Ty, TypeBinding, TyKind};
+use ast::{VariantData, StructField};
+use ast::{Ty, TyKind, TypeBinding, TyParam, TyParamBounds};
+use ast::{NamedField, UnnamedField};
+use ast::{ViewPath, ViewPathGlob, ViewPathList, ViewPathSimple};
 use ast::{Visibility, WhereClause};
 use ast::{BinOpKind, UnOp};
 use ast;
@@ -74,6 +77,13 @@ pub enum PathParsingMode {
 pub enum BoundParsingMode {
     Bare,
     Modified,
+}
+
+/// `pub` should be parsed in struct fields and not parsed in variant fields
+#[derive(Clone, Copy, PartialEq)]
+pub enum ParsePub {
+    Yes,
+    No,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -239,9 +249,7 @@ impl<'a> Parser<'a> {
     /// Expect and consume the token t. Signal an error if
     /// the next token is not t.
     pub fn expect(&mut self, t: &token::Token) -> PResult<'a,  ()> {
-      println!("Enter expect");
         let res = if self.expected_tokens.is_empty() {
-          println!("Enter expected_tokens.empty");
             if self.token == *t {
                 self.bump();
                 Ok(())
@@ -253,12 +261,9 @@ impl<'a> Parser<'a> {
                                    this_token_str)))
             }
         } else {
-          println!("Before expect_one_of");
           let res = self.expect_one_of(unsafe { slice::from_raw_parts(t, 1) }, &[]);
-          println!("After expect_one_of");
           res
         };
-        println!("Leave expect");
         res
     }
 
@@ -410,6 +415,20 @@ impl<'a> Parser<'a> {
         } else {
             self.parse_ident()
         }
+    }
+
+    pub fn parse_path_list_item(&mut self) -> PResult<'a, ast::PathListItem> {
+        let lo = self.span.lo;
+        let node = if self.eat_keyword(keywords::SelfValue) {
+            let rename = try!(self.parse_rename());
+            ast::PathListItemKind::Mod { id: ast::DUMMY_NODE_ID, rename: rename }
+        } else {
+            let ident = try!(self.parse_ident());
+            let rename = try!(self.parse_rename());
+            ast::PathListItemKind::Ident { name: ident, rename: rename, id: ast::DUMMY_NODE_ID }
+        };
+        let hi = self.last_span.hi;
+        Ok(spanned(lo, hi, node))
     }
 
     /// Check if the next token is `tok`, and return `true` if so.
@@ -975,8 +994,30 @@ impl<'a> Parser<'a> {
       let lo = self.span.lo;
 
       let t = if self.check(&token::OpenDelim(token::Paren)) {
-        debug!("OpenDelim");
-        TyKind::Infer
+        self.bump();
+
+        // (t) is a parenthesized ty
+        // (t,) is the type of a tuple with only one field,
+        // of type t
+        let mut ts = vec![];
+        let mut last_comma = false;
+        while self.token != token::CloseDelim(token::Paren) {
+          ts.push(try!(self.parse_ty()));
+          if self.check(&token::Comma) {
+            last_comma = true;
+            self.bump();
+          } else {
+            last_comma = false;
+            break;
+          }
+        }
+
+        try!(self.expect(&token::CloseDelim(token::Paren)));
+        if ts.len() == 1 && !last_comma {
+          TyKind::Paren(ts.into_iter().nth(0).unwrap())
+        } else {
+          TyKind::Tup(ts)
+        }
       } else if self.check(&token::BinOp(token::Star)) {
         TyKind::Infer
       } else if self.check(&token::OpenDelim(token::Bracket)) {
@@ -987,7 +1028,8 @@ impl<'a> Parser<'a> {
       } else if self.check_keyword(keywords::For) {
         TyKind::Infer
       } else if self.token_is_bare_fn_keyword() {
-        TyKind::Infer
+        // BARE FUNCTION
+        try!(self.parse_ty_bare_fn(Vec::new()))
       } else if self.eat_keyword_noexpect(keywords::Typeof) {
         TyKind::Infer
       } else if self.eat_lt() {
@@ -995,7 +1037,6 @@ impl<'a> Parser<'a> {
       } else if self.check(&token::ModSep) ||
                 self.token.is_ident() ||
                 self.token.is_path() {
-        println!("is_ident");
         let path = try!(self.parse_path(NoTypesAllowed));
         // NAMED TYPE
         TyKind::Path(None, path)
@@ -2531,9 +2572,30 @@ impl<'a> Parser<'a> {
         Ok(P(spanned(lo, self.last_span.hi, DeclKind::Local(local))))
     }
 
+    /// Parse a structure field
+    fn parse_name_and_ty(&mut self, pr: Visibility,
+                         attrs: Vec<Attribute> ) -> PResult<'a, StructField> {
+        let lo = match pr {
+            Visibility::Inherited => self.span.lo,
+            Visibility::Public => self.last_span.lo,
+        };
+        if !self.token.is_plain_ident() {
+            return Err(self.fatal("expected ident"));
+        }
+        let name = try!(self.parse_ident());
+        try!(self.expect(&token::Colon));
+        let ty = try!(self.parse_ty());
+        Ok(spanned(lo, self.last_span.hi, ast::StructField_ {
+            kind: NamedField(name, pr),
+            id: ast::DUMMY_NODE_ID,
+            ty: ty,
+            attrs: attrs,
+        }))
+    }
+
     /// Parse a statement. may include decl.
     pub fn parse_stmt(&mut self) -> PResult<'a, Option<Stmt>> {
-        unimplemented!()
+        Ok(self.parse_stmt_())
     }
 
     // Eat tokens until we can be relatively sure we reached the end of the
@@ -2658,7 +2720,17 @@ impl<'a> Parser<'a> {
 
     /// Parse a block. No inner attrs are allowed.
     pub fn parse_block(&mut self) -> PResult<'a, P<Block>> {
-      unimplemented!()
+      let lo = self.span.lo;
+
+      if !self.eat(&token::OpenDelim(token::Brace)) {
+          let sp = self.span;
+          let tok = self.this_token_to_string();
+          return Err(self.span_fatal_help(sp,
+                               &format!("expected `{{`, found `{}`", tok),
+                               "place this code inside a block"));
+      }
+
+      self.parse_block_tail(lo, BlockCheckMode::Default)
     }
 
     /// Parse a block. Inner attrs are allowed.
@@ -2672,7 +2744,6 @@ impl<'a> Parser<'a> {
     /// Parse the rest of a block expression or function body
     /// Precondition: already parsed the '{'.
     fn parse_block_tail(&mut self, lo: BytePos, s: BlockCheckMode) -> PResult<'a, P<Block>> {
-      println!("Enter parse_block_tail");
         let mut stmts = vec![];
         let mut expr = None;
 
@@ -2702,7 +2773,6 @@ impl<'a> Parser<'a> {
             }
         }
 
-        println!("Leave parse_block_tail");
         Ok(P(ast::Block {
             stmts: stmts,
             expr: expr,
@@ -2924,11 +2994,8 @@ impl<'a> Parser<'a> {
 
     /// Parse the argument list and result type of a function declaration
     pub fn parse_fn_decl(&mut self, allow_variadic: bool) -> PResult<'a, P<FnDecl>> {
-      println!("Before prase_fn_args");
       let (args, variadic) = try!(self.parse_fn_args(true, allow_variadic));
-      println!("After prase_fn_args");
       let ret_ty = try!(self.parse_ret_ty());
-      println!("After parse_ret_ty");
 
       Ok(P(FnDecl {
         inputs: args,
@@ -3045,6 +3112,164 @@ impl<'a> Parser<'a> {
       Ok((ident, ItemKind::Fn(decl, unsafety, constness, abi, generics, body), Some(inner_attrs)))
     }
 
+    /// Parse struct Foo { ... }
+    fn parse_item_struct(&mut self) -> PResult<'a, ItemInfo> {
+      let class_name = try!(self.parse_ident());
+      let mut generics = try!(self.parse_generics());
+
+      // There is a special case worth noting here, as reported in issue #17904.
+      // If we are parsing a tuple struct it is the case that the where clause
+      // should follow the field list. Like so:
+      //
+      // struct Foo<T>(T) where T: Copy;
+      //
+      // If we are parsing a normal record-style struct it is the case
+      // that the where clause comes before the body, and after the generics.
+      // So if we look ahead and see a brace or a where-clause we begin
+      // parsing a record style struct.
+      //
+      // Otherwise if we look ahead and see a paren we parse a tuple-style
+      // struct.
+
+      let vdata = if self.token.is_keyword(keywords::Where) {
+          generics.where_clause = try!(self.parse_where_clause());
+          if self.eat(&token::Semi) {
+              // If we see a: `struct Foo<T> where T: Copy;` style decl.
+              VariantData::Unit(ast::DUMMY_NODE_ID)
+          } else {
+              // If we see: `struct Foo<T> where T: Copy { ... }`
+              VariantData::Struct(try!(self.parse_record_struct_body(ParsePub::Yes)),
+                                  ast::DUMMY_NODE_ID)
+          }
+      // No `where` so: `struct Foo<T>;`
+      } else if self.eat(&token::Semi) {
+          VariantData::Unit(ast::DUMMY_NODE_ID)
+      // Record-style struct definition
+      } else if self.token == token::OpenDelim(token::Brace) {
+          VariantData::Struct(try!(self.parse_record_struct_body(ParsePub::Yes)),
+                              ast::DUMMY_NODE_ID)
+      // Tuple-style struct definition with optional where-clause.
+      } else if self.token == token::OpenDelim(token::Paren) {
+          let body = VariantData::Tuple(try!(self.parse_tuple_struct_body(ParsePub::Yes)),
+                                        ast::DUMMY_NODE_ID);
+          generics.where_clause = try!(self.parse_where_clause());
+          try!(self.expect(&token::Semi));
+          body
+      } else {
+          let token_str = self.this_token_to_string();
+          return Err(self.fatal(&format!("expected `where`, `{{`, `(`, or `;` after struct \
+                                          name, found `{}`", token_str)))
+      };
+
+      Ok((class_name, ItemKind::Struct(vdata, generics), None))
+    }
+
+    /// Parse type Foo = Bar;
+    fn parse_item_type(&mut self) -> PResult<'a, ItemInfo> {
+        let ident = try!(self.parse_ident());
+        let mut tps = try!(self.parse_generics());
+        tps.where_clause = try!(self.parse_where_clause());
+        try!(self.expect(&token::Eq));
+        let ty = try!(self.parse_ty());
+        try!(self.expect(&token::Semi));
+        Ok((ident, ItemKind::Ty(ty, tps), None))
+    }
+
+    pub fn parse_record_struct_body(&mut self,
+                                    parse_pub: ParsePub)
+                                    -> PResult<'a, Vec<StructField>> {
+        let mut fields = Vec::new();
+        if self.eat(&token::OpenDelim(token::Brace)) {
+            while self.token != token::CloseDelim(token::Brace) {
+                fields.push(try!(self.parse_struct_decl_field(parse_pub)));
+            }
+
+            self.bump();
+        } else {
+            let token_str = self.this_token_to_string();
+            return Err(self.fatal(&format!("expected `where`, or `{{` after struct \
+                                name, found `{}`",
+                                token_str)));
+        }
+
+        Ok(fields)
+    }
+
+    pub fn parse_tuple_struct_body(&mut self,
+                                   parse_pub: ParsePub)
+                                   -> PResult<'a, Vec<StructField>> {
+        // This is the case where we find `struct Foo<T>(T) where T: Copy;`
+        // Unit like structs are handled in parse_item_struct function
+        let fields = try!(self.parse_unspanned_seq(
+            &token::OpenDelim(token::Paren),
+            &token::CloseDelim(token::Paren),
+            SeqSep::trailing_allowed(token::Comma),
+            |p| {
+                let attrs = try!(p.parse_outer_attributes());
+                let lo = p.span.lo;
+                let struct_field_ = ast::StructField_ {
+                    kind: UnnamedField (
+                        if parse_pub == ParsePub::Yes {
+                            try!(p.parse_visibility())
+                        } else {
+                            Visibility::Inherited
+                        }
+                    ),
+                    id: ast::DUMMY_NODE_ID,
+                    ty: try!(p.parse_ty()),
+                    attrs: attrs,
+                };
+                Ok(spanned(lo, p.span.hi, struct_field_))
+            }));
+
+        Ok(fields)
+    }
+
+    /// Parse a structure field declaration
+    pub fn parse_single_struct_field(&mut self,
+                                     vis: Visibility,
+                                     attrs: Vec<Attribute> )
+                                     -> PResult<'a, StructField> {
+        let a_var = try!(self.parse_name_and_ty(vis, attrs));
+        match self.token {
+            token::Comma => {
+                self.bump();
+            }
+            token::CloseDelim(token::Brace) => {}
+            _ => {
+                let span = self.span;
+                let token_str = self.this_token_to_string();
+                return Err(self.span_fatal_help(span,
+                                     &format!("expected `,`, or `}}`, found `{}`",
+                                             token_str),
+                                     "struct fields should be separated by commas"))
+            }
+        }
+        Ok(a_var)
+    }
+
+    /// Parse an element of a struct definition
+    fn parse_struct_decl_field(&mut self, parse_pub: ParsePub) -> PResult<'a, StructField> {
+
+        let attrs = try!(self.parse_outer_attributes());
+
+        if self.eat_keyword(keywords::Pub) {
+            if parse_pub == ParsePub::No {
+                let span = self.last_span;
+                self.span_err(span, "`pub` is not allowed here");
+            }
+            return self.parse_single_struct_field(Visibility::Public, attrs);
+        }
+
+        return self.parse_single_struct_field(Visibility::Inherited, attrs);
+    }
+
+    /// Parse visibility: PUB or nothing
+    fn parse_visibility(&mut self) -> PResult<'a, Visibility> {
+        if self.eat_keyword(keywords::Pub) { Ok(Visibility::Public) }
+        else { Ok(Visibility::Inherited) }
+    }
+
     /// Parse one of the items allowed by the flags.
     /// NB: this function no longer parses the items inside an
     /// extern crate.
@@ -3053,11 +3278,20 @@ impl<'a> Parser<'a> {
       let lo = self.span.lo;
 
       let visibility = try!(self.parse_visibility());
-      println!("Visibility: {:?}", visibility);
 
-      if self.eat_keyword(keywords::Use) {
-        println!("Keyword: Use");
-        unimplemented!()
+      if self.eat_keyword(keywords::Import) {
+        // IMPORT ITEM
+        let item_ = ItemKind::Import(try!(self.parse_view_path()));
+        try!(self.expect(&token::Semi));
+
+        let last_span = self.last_span;
+        let item = self.mk_item(lo,
+                                last_span.hi,
+                                token::special_idents::invalid,
+                                item_,
+                                visibility,
+                                attrs);
+        return Ok(Some(item));
       }
 
       if self.eat_keyword(keywords::Extern) {
@@ -3097,8 +3331,16 @@ impl<'a> Parser<'a> {
       }
 
       if self.eat_keyword(keywords::Type) {
-        println!("Keyword: Type");
-        unimplemented!()
+        // TYPE ITEM
+        let (ident, item_, extra_attrs) = try!(self.parse_item_type());
+        let last_span = self.last_span;
+        let item = self.mk_item(lo,
+                                last_span.hi,
+                                ident,
+                                item_,
+                                visibility,
+                                maybe_append(attrs, extra_attrs));
+        return Ok(Some(item));
       }
 
       if self.eat_keyword(keywords::Enum) {
@@ -3107,8 +3349,16 @@ impl<'a> Parser<'a> {
       }
 
       if self.eat_keyword(keywords::Struct) {
-        println!("Keyword: Struct");
-        unimplemented!()
+        // STRUCT ITEM
+        let (ident, item_, extra_attrs) = try!(self.parse_item_struct());
+        let last_span = self.last_span;
+        let item = self.mk_item(lo,
+                                last_span.hi,
+                                ident,
+                                item_,
+                                visibility,
+                                maybe_append(attrs, extra_attrs));
+        return Ok(Some(item));
       }
 
       Ok(None)
@@ -3119,10 +3369,113 @@ impl<'a> Parser<'a> {
       self.parse_item_(attrs, true, false)
     }
 
-    /// Parse visibility: PUB or nothing
-    fn parse_visibility(&mut self) -> PResult<'a, Visibility> {
-        if self.eat_keyword(keywords::Pub) { Ok(Visibility::Public) }
-        else { Ok(Visibility::Inherited) }
+    /// Matches view_path : MOD? non_global_path as IDENT
+    /// | MOD? non_global_path MOD_SEP LBRACE RBRACE
+    /// | MOD? non_global_path MOD_SEP LBRACE ident_seq RBRACE
+    /// | MOD? non_global_path MOD_SEP STAR
+    /// | MOD? non_global_path
+    fn parse_view_path(&mut self) -> PResult<'a, P<ViewPath>> {
+      let lo = self.span.lo;
+
+      // Allow a leading :: because the paths are absolute either way.
+      // This occurs with "use $crate::..." in macros.
+      self.eat(&token::ModSep);
+
+      if self.check(&token::OpenDelim(token::Brace)) {
+          // use {foo,bar}
+          let idents = try!(self.parse_unspanned_seq(
+              &token::OpenDelim(token::Brace),
+              &token::CloseDelim(token::Brace),
+              SeqSep::trailing_allowed(token::Comma),
+              |p| p.parse_path_list_item()));
+          let path = ast::Path {
+              span: mk_sp(lo, self.span.hi),
+              global: false,
+              segments: Vec::new()
+          };
+          return Ok(P(spanned(lo, self.span.hi, ViewPathList(path, idents))));
+      }
+
+      let first_ident = try!(self.parse_ident());
+        let mut path = vec!(first_ident);
+        if let token::ModSep = self.token {
+            // foo::bar or foo::{a,b,c} or foo::*
+            while self.check(&token::ModSep) {
+                self.bump();
+
+                match self.token {
+                  token::Ident(..) => {
+                    let ident = try!(self.parse_ident());
+                    path.push(ident);
+                  }
+
+                  // foo::bar::{a,b,c}
+                  token::OpenDelim(token::Brace) => {
+                    let idents = try!(self.parse_unspanned_seq(
+                        &token::OpenDelim(token::Brace),
+                        &token::CloseDelim(token::Brace),
+                        SeqSep::trailing_allowed(token::Comma),
+                        |p| p.parse_path_list_item()
+                    ));
+                    let path = ast::Path {
+                        span: mk_sp(lo, self.span.hi),
+                        global: false,
+                        segments: path.into_iter().map(|identifier| {
+                            ast::PathSegment {
+                                identifier: identifier,
+                                parameters: ast::PathParameters::none(),
+                            }
+                        }).collect()
+                    };
+                    return Ok(P(spanned(lo, self.span.hi, ViewPathList(path, idents))));
+                  }
+
+                  // foo::bar::*
+                  token::BinOp(token::Star) => {
+                    self.bump();
+                    let path = ast::Path {
+                        span: mk_sp(lo, self.span.hi),
+                        global: false,
+                        segments: path.into_iter().map(|identifier| {
+                            ast::PathSegment {
+                                identifier: identifier,
+                                parameters: ast::PathParameters::none(),
+                            }
+                        }).collect()
+                    };
+                    return Ok(P(spanned(lo, self.span.hi, ViewPathGlob(path))));
+                  }
+
+                  // fall-through for case foo::bar::;
+                  token::Semi => {
+                    self.span_err(self.span, "expected identifier or `{` or `*`, found `;`");
+                  }
+
+                  _ => break
+                }
+            }
+        }
+        let mut rename_to = path[path.len() - 1];
+        let path = ast::Path {
+            span: mk_sp(lo, self.last_span.hi),
+            global: false,
+            segments: path.into_iter().map(|identifier| {
+                ast::PathSegment {
+                    identifier: identifier,
+                    parameters: ast::PathParameters::none(),
+                }
+            }).collect()
+        };
+        rename_to = try!(self.parse_rename()).unwrap_or(rename_to);
+        Ok(P(spanned(lo, self.last_span.hi, ViewPathSimple(rename_to, path))))
+    }
+
+    fn parse_rename(&mut self) -> PResult<'a, Option<Ident>> {
+        if self.eat_keyword(keywords::As) {
+            self.parse_ident().map(Some)
+        } else {
+            Ok(None)
+        }
     }
 
     /// Given a termination token, parse all of the items in a module

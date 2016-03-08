@@ -1811,8 +1811,8 @@ pub enum ItemKind {
   ///
   /// e.g. `extern crate foo` or `extern crate foo_bar as foo`
   ExternCrate(Option<Name>),
-  /// A `use` or `pub use` item
-  Use(P<ViewPath>),
+  /// A `import` or `pub import` item
+  Import(P<ViewPath>),
 
   /// A `static` item
   Static(P<Ty>, Mutability, P<Expr>),

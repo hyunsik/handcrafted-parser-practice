@@ -665,9 +665,10 @@ mod tests {
   use ast::{self, TokenTree, Item};
   use parse::token::{Token, str_to_ident};
   use codemap::{Span, BytePos, Pos};
-  use util::parser_testing::{string_to_expr, string_to_tts, string_to_item};
   use parse::lexer::{Reader, StringReader};
   use parse::parser::Parser;
+  use util::parser_testing::{string_to_tts, string_to_parser};
+  use util::parser_testing::{string_to_expr, string_to_item, string_to_stmt};
 
   use std::rc::Rc;
 
@@ -690,8 +691,53 @@ mod tests {
     println!("{:?}", x);
   }
 
-  #[test] fn expr1() {
+  #[test] fn items_4() {
+    let x = string_to_item("type Point = f32;".to_string()).unwrap();
+    println!("{:?}", x);
+  }
+
+  #[test] fn items_5() {
+    let x = string_to_item("type Point = (f64, f64);".to_string()).unwrap();
+    println!("{:?}", x);
+  }
+
+  #[test] fn items_6() {
+    let x = string_to_item("type F = fn(f64) -> f64;".to_string()).unwrap();
+    println!("{:?}", x);
+  }
+
+  #[test] fn items_7() {
+    let x = string_to_item("struct S {name: char, age: i8}".to_string()).unwrap();
+    println!("{:?}", x);
+  }
+
+  #[test] fn items_8() {
+    let x = string_to_item("struct S (char, i8);".to_string()).unwrap();
+    println!("{:?}", x);
+  }
+
+  #[test] fn items_9() {
+    let x = string_to_item("import std::sql::*;".to_string()).unwrap();
+    println!("{:?}", x);
+  }
+
+  #[test] fn expr_1() {
     let x = string_to_expr("1 + 2".to_string());
+  }
+
+  #[test] fn stmt_1() {
+    let x = string_to_stmt("let x = 10;".to_string()).unwrap();
+    println!("{:?}", x);
+  }
+
+  #[test] fn stmt_2() {
+    let x = string_to_stmt("let x = if y { 1 } else { 0 };".to_string()).unwrap();
+    println!("{:?}", x);
+  }
+
+  #[test] fn stmt_3() {
+    let x = string_to_stmt("for x in 0..10 { println(\"xx\"); }".to_string()).unwrap();
+    println!("{:?}", x);
   }
 
   #[test]

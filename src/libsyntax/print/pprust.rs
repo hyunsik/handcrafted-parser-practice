@@ -1069,9 +1069,9 @@ impl<'a> State<'a> {
                 try!(self.end()); // end inner head-block
                 try!(self.end()); // end outer head-block
             }
-            ast::ItemKind::Use(ref vp) => {
+            ast::ItemKind::Import(ref vp) => {
                 try!(self.head(&visibility_qualified(item.vis,
-                                                     "use")));
+                                                     "import")));
                 try!(self.print_view_path(&vp));
                 try!(word(&mut self.s, ";"));
                 try!(self.end()); // end inner head-block
