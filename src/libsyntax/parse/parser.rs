@@ -1280,8 +1280,13 @@ impl<'a> Parser<'a> {
       return Ok(Vec::new());
     }
 
+    // TODO - should be replaced by 'var'.
     pub fn parse_mutability(&mut self) -> PResult<'a, Mutability> {
-      unimplemented!()
+      if self.eat_keyword(keywords::Mut) {
+        Ok(Mutability::Mutable)
+      } else {
+        Ok(Mutability::Immutable)
+      }
     }
 
     pub fn mk_expr(&mut self, lo: BytePos, hi: BytePos,
@@ -2444,17 +2449,17 @@ impl<'a> Parser<'a> {
           pat = PatKind::Wild;
         }
         token::BinOp(token::And) | token::AndAnd => {
-          // Parse _
+          // TODO
           self.bump();
           pat = PatKind::Wild;
         }
         token::OpenDelim(token::Paren) => {
-          // Parse _
+          // TODO
           self.bump();
           pat = PatKind::Wild;
         }
         token::OpenDelim(token::Bracket) => {
-          // Parse _
+          // TODO
           self.bump();
           pat = PatKind::Wild;
         }
@@ -2546,9 +2551,10 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse a local variable declaration
-    fn parse_local(&mut self, attrs: ThinAttributes) -> PResult<'a, P<Local>> {
+    fn parse_local(&mut self, attrs: ThinAttributes, mutability: bool) -> PResult<'a, P<Local>> {
         let lo = self.span.lo;
-        let pat = try!(self.parse_pat());
+
+        let pat = try!(self.parse_local_pat(mutability));
 
         let mut ty = None;
         if self.eat(&token::Colon) {
@@ -2565,10 +2571,42 @@ impl<'a> Parser<'a> {
         }))
     }
 
+    pub fn parse_local_pat(&mut self, mutability: bool) -> PResult<'a, P<Pat>> {
+      let lo = self.span.lo;
+
+      let pat;
+
+      if self.is_path_start() {
+        let binding_mode = if mutability {
+          BindingMode::ByValue(Mutability::Mutable)
+        } else {
+          BindingMode::ByValue(Mutability::Immutable)
+        };
+
+        pat = try!(self.parse_pat_ident(binding_mode));
+      } else {
+        return self.unexpected_last(&self.token);
+      };
+
+      let hi = self.last_span.hi;
+      Ok(P(ast::Pat {
+          id: ast::DUMMY_NODE_ID,
+          node: pat,
+          span: mk_sp(lo, hi),
+      }))
+    }
+
     /// Parse a "let" stmt
     fn parse_let(&mut self, attrs: ThinAttributes) -> PResult<'a, P<Decl>> {
         let lo = self.span.lo;
-        let local = try!(self.parse_local(attrs));
+        let local = try!(self.parse_local(attrs, false));
+        Ok(P(spanned(lo, self.last_span.hi, DeclKind::Local(local))))
+    }
+
+    /// Parse a "var" stmt
+    fn parse_var(&mut self, attrs: ThinAttributes) -> PResult<'a, P<Decl>> {
+        let lo = self.span.lo;
+        let local = try!(self.parse_local(attrs, true));
         Ok(P(spanned(lo, self.last_span.hi, DeclKind::Local(local))))
     }
 
@@ -2666,11 +2704,19 @@ impl<'a> Parser<'a> {
         let lo = self.span.lo;
 
         Ok(Some(if self.check_keyword(keywords::Let) {
-            try!(self.expect_keyword(keywords::Let));
-            let decl = try!(self.parse_let(attrs.into_thin_attrs()));
-            let hi = decl.span.hi;
-            let stmt = StmtKind::Decl(decl, ast::DUMMY_NODE_ID);
-            spanned(lo, hi, stmt)
+          try!(self.expect_keyword(keywords::Let));
+          let decl = try!(self.parse_let(attrs.into_thin_attrs()));
+          let hi = decl.span.hi;
+          let stmt = StmtKind::Decl(decl, ast::DUMMY_NODE_ID);
+          spanned(lo, hi, stmt)
+
+        } else if self.check_keyword(keywords::Var) {
+          try!(self.expect_keyword(keywords::Var));
+          let decl = try!(self.parse_var(attrs.into_thin_attrs()));
+          let hi = decl.span.hi;
+          let stmt = StmtKind::Decl(decl, ast::DUMMY_NODE_ID);
+          spanned(lo, hi, stmt)
+
         } else {
             // FIXME: Bad copy of attrs
             let restrictions = self.restrictions | NO_NONINLINE_MOD;

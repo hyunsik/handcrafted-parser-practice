@@ -2086,12 +2086,25 @@ impl<'a> State<'a> {
     }
 
     pub fn print_local_decl(&mut self, loc: &ast::Local) -> io::Result<()> {
-        try!(self.print_pat(&loc.pat));
+        try!(self.print_local_pat(&loc.pat));
         if let Some(ref ty) = loc.ty {
             try!(self.word_space(":"));
             try!(self.print_type(&ty));
         }
         Ok(())
+    }
+
+    pub fn print_local_pat(&mut self, pat: &ast::Pat) -> io::Result<()> {
+      try!(self.maybe_print_comment(pat.span.lo));
+      try!(self.ann.pre(self, NodePat(pat)));
+
+      match pat.node {
+        PatKind::Ident(binding_mode, ref path1, ref sub) => {
+          try!(self.print_ident(path1.node));
+        }
+        _ => panic!("Unsupported yet")
+      }
+      self.ann.post(self, NodePat(pat))
     }
 
     pub fn print_decl(&mut self, decl: &ast::Decl) -> io::Result<()> {
@@ -2101,8 +2114,11 @@ impl<'a> State<'a> {
                 try!(self.print_outer_attributes(loc.attrs.as_attr_slice()));
                 try!(self.space_if_not_bol());
                 try!(self.ibox(INDENT_UNIT));
-                try!(self.word_nbsp("let"));
-
+                if is_mutable_local(&loc.pat) {
+                  try!(self.word_nbsp("var"));
+                } else {
+                  try!(self.word_nbsp("let"));
+                }
                 try!(self.ibox(INDENT_UNIT));
                 try!(self.print_local_decl(&loc));
                 try!(self.end());
@@ -2938,3 +2954,19 @@ impl<'a> State<'a> {
 }
 
 fn repeat(s: &str, n: usize) -> String { iter::repeat(s).take(n).collect() }
+
+fn is_mutable_local(pat: &ast::Pat) -> bool {
+  let mutability = match pat.node {
+    ast::PatKind::Ident(ref mode, _, _) => {
+      match *mode {
+        ast::BindingMode::ByValue(m) => m,
+        ast::BindingMode::ByRef(m) => m,
+      }
+    },
+    _ => {
+      panic!("is possible?")
+    }
+  };
+
+  mutability == ast::Mutability::Mutable
+}

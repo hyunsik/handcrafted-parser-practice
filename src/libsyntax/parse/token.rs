@@ -481,23 +481,24 @@ declare_special_idents_and_keywords! {
         (41,                         Box,        "box");
         (42,                         Const,      "const");
         (43,                         Where,      "where");
+        (44,                         Var,        "var");
         'reserved:
-        (44,                         Virtual,    "virtual");
-        (45,                         Proc,       "proc");
-        (46,                         Alignof,    "alignof");
-        (47,                         Become,     "become");
-        (48,                         Offsetof,   "offsetof");
-        (49,                         Priv,       "priv");
-        (50,                         Pure,       "pure");
-        (51,                         Sizeof,     "sizeof");
-        (52,                         Typeof,     "typeof");
-        (53,                         Unsized,    "unsized");
-        (54,                         Yield,      "yield");
-        (55,                         Do,         "do");
-        (56,                         Abstract,   "abstract");
-        (57,                         Final,      "final");
-        (58,                         Override,   "override");
-        (59,                         Macro,      "macro");
+        (45,                         Virtual,    "virtual");
+        (46,                         Proc,       "proc");
+        (47,                         Alignof,    "alignof");
+        (48,                         Become,     "become");
+        (49,                         Offsetof,   "offsetof");
+        (50,                         Priv,       "priv");
+        (51,                         Pure,       "pure");
+        (52,                         Sizeof,     "sizeof");
+        (53,                         Typeof,     "typeof");
+        (54,                         Unsized,    "unsized");
+        (55,                         Yield,      "yield");
+        (56,                         Do,         "do");
+        (57,                         Abstract,   "abstract");
+        (58,                         Final,      "final");
+        (59,                         Override,   "override");
+        (60,                         Macro,      "macro");
     }
 }
 

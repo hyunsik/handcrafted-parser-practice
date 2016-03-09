@@ -730,12 +730,17 @@ mod tests {
     println!("{:?}", x);
   }
 
-  #[test] fn stmt_2() {
+  #[test] fn stmt_4() {
+    let x = string_to_stmt("var x = 10;".to_string()).unwrap();
+    println!("{:?}", x);
+  }
+
+  #[test] fn stmt_5() {
     let x = string_to_stmt("let x = if y { 1 } else { 0 };".to_string()).unwrap();
     println!("{:?}", x);
   }
 
-  #[test] fn stmt_3() {
+  #[test] fn stmt_6() {
     let x = string_to_stmt("for x in 0..10 { println(\"xx\"); }".to_string()).unwrap();
     println!("{:?}", x);
   }
